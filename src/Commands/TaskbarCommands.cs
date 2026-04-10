@@ -108,6 +108,17 @@ public static class TaskbarCommands
 
             Directory.CreateDirectory(aSnapshotDir);
             string aLinksDir = Path.Combine(aSnapshotDir, "links");
+            if (Directory.Exists(aLinksDir)) {
+                // Wipe stale .lnk files from a previous snapshot at the
+                // same location. Otherwise our collision-safe CopyLnkFile
+                // would append '_N' suffixes to the fresh copies to avoid
+                // overwriting the leftovers, which then get referenced by
+                // the snapshot XML and propagated to future applies —
+                // exactly the drift we're trying to kill.
+                foreach (string aOld in Directory.EnumerateFiles(aLinksDir, "*.lnk")) {
+                    try { File.Delete(aOld); } catch { /* best effort */ }
+                }
+            }
             Directory.CreateDirectory(aLinksDir);
 
             using var aPinnedList = new PinnedList3();
@@ -864,10 +875,38 @@ public static class TaskbarCommands
 
 
     /// <summary>
+    /// Strips trailing '_N' suffixes from a .lnk filename's base name.
+    /// Windows appends '_1' to every copy of a pinned shortcut when a
+    /// file with the same basename has existed in the pinned folder
+    /// before, and the suffixes compound across snapshot/apply cycles
+    /// ('Foo.lnk' -> 'Foo_1.lnk' -> 'Foo_1_1.lnk' -> ...). Beyond the
+    /// cosmetic name drift, the suffixed copies eventually confuse the
+    /// shell's icon cache and render as blank icons. Copying with
+    /// stripped basenames means future applies reference files that
+    /// match what Explorer wants to produce, breaking the feedback
+    /// loop. Returns the input unchanged if no suffix is present.
+    /// </summary>
+    private static string StripLnkSuffix(string lnkFileName)
+    {
+
+        string aBase = Path.GetFileNameWithoutExtension(lnkFileName);
+        string aExt = Path.GetExtension(lnkFileName);
+        string aStripped = Regex.Replace(aBase, @"(_\d+)+$", "");
+        if (string.IsNullOrEmpty(aStripped))
+            return lnkFileName;  // refuse to return an empty basename
+        return aStripped + aExt;
+
+    }
+
+
+    /// <summary>
     /// Copies a single .lnk file into targetDir with collision-safe
     /// suffix numbering (e.g. 'Foo.lnk' -> 'Foo_1.lnk' if 'Foo.lnk'
     /// already exists in targetDir) and records the mapping under
-    /// the original source path. No-ops if the source file is missing.
+    /// the original source path. The destination name has any Windows-
+    /// added '_N' suffixes stripped via StripLnkSuffix so that future
+    /// apply cycles don't compound the drift. No-ops if the source
+    /// file is missing.
     /// </summary>
     private static void CopyLnkFile(string srcPath, string targetDir,
         Dictionary<string, string> mapping)
@@ -876,7 +915,7 @@ public static class TaskbarCommands
         if (!File.Exists(srcPath))
             return;
 
-        string aDestName = Path.GetFileName(srcPath);
+        string aDestName = StripLnkSuffix(Path.GetFileName(srcPath));
         string aDest = Path.Combine(targetDir, aDestName);
 
         int aSuffix = 1;
