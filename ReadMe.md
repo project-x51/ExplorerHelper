@@ -10,17 +10,26 @@ For internals (how the layout XML queue works, how apply merges pending pins, th
 
 ```
 Taskbar list                                       List pinned apps (in taskbar order)
+Taskbar snapshot [path]                            Snapshot pins to XML + backup .lnk files
 Taskbar pin <app>                                  Pin app(s) to taskbar
 Taskbar pin -Apps <csv>                            Pin multiple apps (comma-separated)
 Taskbar pin <app> -Apply $false                    Queue only, don't apply
 Taskbar unpin <name>                               Unpin app from taskbar by name
 Taskbar unpinall                                   Unpin ALL items from the taskbar
-Taskbar snapshot [path]                            Snapshot pins to XML + backup .lnk files
 Taskbar apply                                      Apply pending pins (merge with existing)
 Taskbar apply -Order <csv>                         Apply pending pins and reorder
 Taskbar apply <snapshot.xml>                       Restore taskbar from a snapshot file
 Taskbar apply $false                               Skip apply (no-op, for setup scripts)
 ```
+
+### snapshot
+
+Saves the current taskbar state to XML and copies all `.lnk` files to a `links/` subfolder. Does not modify the taskbar. The `path` argument can be:
+- Omitted → `%TEMP%\ExplorerHelper_Snapshot_<datetime>\snapshot.xml`
+- A folder → `<folder>\snapshot_<datetime>.xml`
+- An `.xml` file → exact path (overwritten if exists)
+
+The snapshot file is a plain XML document — items are in line order, so rearranging them by cut/paste reorders the taskbar on restore, and editing `displayName` renames the tooltip. See [`src/Implementation.md`](src/Implementation.md) for the schema.
 
 ### pin
 
@@ -36,6 +45,10 @@ A positional `<app>` argument is equivalent to `-Apps <app>` for single-app pins
 
 The app name may contain `*` and `?` glob wildcards; a wildcard pattern resolves to every matching Start Menu shortcut. Without wildcards, an exact match is preferred.
 
+### unpin
+
+Accepts a single name or a comma-separated list. For each name, finds the matching pinned shortcut (substring match) and unpins it.
+
 ### apply
 
 When called **without a path**: merges pending pins with the current taskbar (new items appended at end, duplicates skipped), optionally reorders, and rebuilds the taskbar. If nothing changed, the rebuild is skipped. Prints a consolidated result showing each item's state (`Added`, `Moved`, `Pinned`).
@@ -50,19 +63,6 @@ When called **with `$false`** as the target (PowerShell wrapper only): prints `A
 ```
 
 See [`src/Implementation.md`](src/Implementation.md) for the internals of pending-pin merging, the matching cascade, and how the rebuild is performed.
-
-### unpin
-
-Accepts a single name or a comma-separated list. For each name, finds the matching pinned shortcut (substring match) and unpins it.
-
-### snapshot
-
-Saves the current taskbar state to XML and copies all `.lnk` files to a `links/` subfolder. Does not modify the taskbar. The `path` argument can be:
-- Omitted → `%TEMP%\ExplorerHelper_Snapshot_<datetime>\snapshot.xml`
-- A folder → `<folder>\snapshot_<datetime>.xml`
-- An `.xml` file → exact path (overwritten if exists)
-
-The snapshot file is a plain XML document — items are in line order, so rearranging them by cut/paste reorders the taskbar on restore, and editing `displayName` renames the tooltip. See [`src/Implementation.md`](src/Implementation.md) for the schema.
 
 ## QuickAccess
 
