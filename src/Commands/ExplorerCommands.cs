@@ -148,8 +148,8 @@ public static class ExplorerCommands
 
         for (int i = 0; i < 5; i++) {
             try {
-                if (File.Exists(LAYOUT_MOD_PATH)) { File.Delete(LAYOUT_MOD_PATH); return; }
-                else return;
+                File.Delete(LAYOUT_MOD_PATH);
+                return;
             }
             catch { Thread.Sleep(1000); }
         }

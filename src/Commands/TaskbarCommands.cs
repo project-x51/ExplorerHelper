@@ -542,6 +542,8 @@ public static class TaskbarCommands
             .ToArray();
 
         int aResult = 0;
+        using var aPinnedList = new PinnedList3();
+
         foreach (string aName in aNames) {
             string? aLnkPath = FindPinnedShortcut(aName);
             if (aLnkPath == null) {
@@ -559,7 +561,6 @@ public static class TaskbarCommands
                     continue;
                 }
 
-                using var aPinnedList = new PinnedList3();
                 aHr = aPinnedList.Unpin(aPidl);
                 if (aHr != 0) {
                     Console.Error.WriteLine($"Taskbar: ERROR: Unpin failed for '{aName}'");

@@ -201,6 +201,9 @@ public static class QuickAccessCommands
             var aCurrentPaths = GetPinnedItems();
             bool aChanged = false;
 
+            // Shared COM instance for both loops
+            dynamic aShell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
+
             // Unpin items not in the snapshot
             foreach (string aCurrent in aCurrentPaths) {
                 bool aInSnapshot = aDesiredPaths.Any(d =>
@@ -208,7 +211,6 @@ public static class QuickAccessCommands
 
                 if (!aInSnapshot) {
                     try {
-                        dynamic aShell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
                         dynamic aQuickAccess = aShell.NameSpace(QUICK_ACCESS_GUID);
                         foreach (dynamic aItem in aQuickAccess.Items()) {
                             if (string.Equals((string)aItem.Path, aCurrent, StringComparison.OrdinalIgnoreCase)) {
@@ -236,7 +238,6 @@ public static class QuickAccessCommands
                 }
 
                 try {
-                    dynamic aShell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
                     dynamic aFolder = aShell.NameSpace(aDesired);
                     if (aFolder == null) {
                         Console.Error.WriteLine($"QuickAccess: ERROR: Could not access folder '{aDesired}'.");
