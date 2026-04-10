@@ -33,11 +33,29 @@ prints, including the prefix.
    Every test file created below lives inside `$TestDir` so the suite
    leaves no trace outside `%TEMP%` on any machine. Teardown deletes the
    whole folder.
-4. Take an original snapshot of the taskbar as the restore point:
+4. **Normalize the pinned taskbar folder so no .lnk files have a trailing
+   `_N` suffix.** Previous versions of this tool could leave `Foo_1.lnk`
+   style drift, which confuses the shell icon cache. The fastest way
+   is a snapshot + apply cycle (`Taskbar snapshot` strips the suffix on
+   copy, `Taskbar apply` writes clean names back to the pinned folder):
+   ```powershell
+   $normSnap = Join-Path $TestDir "normalize.xml"
+   Taskbar snapshot $normSnap
+   Taskbar apply $normSnap
+   ```
+   Verify that no pinned `.lnk` file has a `_<digits>` suffix:
+   ```powershell
+   $suffixed = Get-ChildItem "$env:APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar" -Filter '*.lnk' |
+               Where-Object { $_.BaseName -match '_\d+$' }
+   if ($suffixed) { throw "Setup: suffixed .lnk files still present: $($suffixed.Name -join ', ')" }
+   ```
+   If the `throw` fires, the drift fix didn't converge on this machine —
+   stop and investigate before running any tests.
+5. Take an original snapshot of the taskbar as the restore point:
    `Taskbar snapshot "$TestDir\eh_tests_original.xml"`
    Record the reported **Items** count as `$OriginalTaskbarCount` and the first
    3 display names from `Taskbar list` as `$OriginalTop3` for later verification.
-5. Take an original snapshot of Quick Access as the restore point:
+6. Take an original snapshot of Quick Access as the restore point:
    `QuickAccess snapshot "$TestDir\eh_tests_qa_original.xml"`
    Record the reported **Items** count as `$OriginalQACount`.
 
@@ -86,8 +104,14 @@ Under the old substring-fallback behaviour this would have silently matched
 
 ### T03c — Taskbar Pin with explicit .lnk path
 **Prerequisite:** `LayoutModification.xml` does not exist. Find the
-Command Prompt shortcut path with
-`$cp = Get-ChildItem "$env:ProgramData\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter 'Command Prompt.lnk' | Select -First 1 -ExpandProperty FullName`
+Command Prompt shortcut path (search both machine and user Start
+Menus because Windows may have moved it between them):
+```powershell
+$cp = @("$env:ProgramData\Microsoft\Windows\Start Menu\Programs",
+        "$env:APPDATA\Microsoft\Windows\Start Menu\Programs") |
+      ForEach-Object { Get-ChildItem $_ -Recurse -Filter 'Command Prompt.lnk' -EA 0 } |
+      Select-Object -First 1 -ExpandProperty FullName
+```
 **Run:** `Taskbar pin $cp -Apply $false`
 **Expect:** Output contains `Taskbar: Queued pin for Command Prompt`
 (the display name comes from the filename without extension).
