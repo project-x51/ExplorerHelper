@@ -43,7 +43,7 @@ Resolves desktop apps to Start Menu `.lnk` shortcuts and queues them for the nex
 
 A positional `<app>` argument is equivalent to `-Apps <app>` for single-app pins.
 
-**Desktop app matching:** exact Start Menu shortcut name first, substring fallback. `Taskbar pin "Word"` finds `Word 2016.lnk`.
+**Desktop app matching:** case-insensitive exact match on the Start Menu `.lnk` filename (without the extension). `Taskbar pin "Word 2016"` finds `Word 2016.lnk`; `Taskbar pin "Word"` errors with `Could not find a Start Menu shortcut for 'Word'.` If an exact match is not found, a `'<name>_N'` suffix match is accepted as a fallback (Windows appends these when the layout cache is stale). A full `.lnk` path is also accepted and used directly. Substring matching was removed — it silently picked the wrong app when the query was a prefix of another (e.g. `"Notepad"` matching `Notepad++.lnk`).
 
 **UWP pattern matching:** `-match` is a substring-regex, so `UWP:Calculator` finds `Microsoft.WindowsCalculator`. The pattern IS a regex, though, so metacharacters like `.`, `+`, `(`, `[` are interpreted — if you need to match a literal metacharacter, escape it (e.g. `UWP:Paint\.NET`).
 
@@ -64,7 +64,8 @@ When called **with `$false`** as the target (PowerShell wrapper only): prints `A
 
 ```
 -Order <csv>         Reorder: listed apps first, unlisted apps keep their current order.
-                     Matching is: exact → '<name>_N' suffix → substring.
+                     Matching is: exact → '<name>_N' suffix. Names that don't
+                     match any pinned item are silently skipped.
 ```
 
 See [`src/Implementation.md`](src/Implementation.md) for the internals of pending-pin merging, the matching cascade, and how the rebuild is performed.

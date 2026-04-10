@@ -347,17 +347,15 @@ public static class TaskbarCommands
                 var aRemaining = new List<PinnedList3.PinnedItem>(aMerged);
 
                 foreach (string aName in aOrderNames) {
-                    // Prefer exact match, then match with _N suffix,
-                    // then fall back to partial match (contains)
+                    // Exact match first, then '<name>_N' suffix match.
+                    // No substring fallback — it silently picked the wrong
+                    // item when the query was a prefix of another.
                     int aIdx = aRemaining.FindIndex(i =>
                         i.DisplayName.Equals(aName, StringComparison.OrdinalIgnoreCase));
                     if (aIdx < 0)
                         aIdx = aRemaining.FindIndex(i =>
                             i.DisplayName.StartsWith(aName, StringComparison.OrdinalIgnoreCase) &&
                             i.DisplayName.Length > aName.Length && i.DisplayName[aName.Length] == '_');
-                    if (aIdx < 0)
-                        aIdx = aRemaining.FindIndex(i =>
-                            i.DisplayName.IndexOf(aName, StringComparison.OrdinalIgnoreCase) >= 0);
 
                     if (aIdx >= 0) {
                         aOrdered.Add(aRemaining[aIdx]);
@@ -928,16 +926,13 @@ public static class TaskbarCommands
             var aRemaining = new List<(string DisplayName, string PinEntry)>(aItems);
 
             foreach (string aName in aOrderNames) {
-                // exact → _N suffix → substring (same cascade as ApplyPending)
+                // exact → '<name>_N' suffix (same cascade as ApplyPending)
                 int aIdx = aRemaining.FindIndex(i =>
                     i.DisplayName.Equals(aName, StringComparison.OrdinalIgnoreCase));
                 if (aIdx < 0)
                     aIdx = aRemaining.FindIndex(i =>
                         i.DisplayName.StartsWith(aName, StringComparison.OrdinalIgnoreCase) &&
                         i.DisplayName.Length > aName.Length && i.DisplayName[aName.Length] == '_');
-                if (aIdx < 0)
-                    aIdx = aRemaining.FindIndex(i =>
-                        i.DisplayName.IndexOf(aName, StringComparison.OrdinalIgnoreCase) >= 0);
 
                 if (aIdx >= 0) {
                     aOrdered.Add(aRemaining[aIdx]);
@@ -998,7 +993,16 @@ public static class TaskbarCommands
     // ───────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Resolves an .exe path to its Start Menu .lnk shortcut.
+    /// Resolves a name to a Start Menu .lnk shortcut. Accepts either a
+    /// full .lnk path (fast path — returned as-is if it exists) or a
+    /// display name that must match a shortcut exactly. The cascade is:
+    ///   1. exact filename match (case-insensitive)
+    ///   2. '<name>_N' suffix match (Windows appends these when the
+    ///      layout cache is stale and a duplicate is created)
+    /// Returns null if no match is found. Substring matching was removed
+    /// because it silently picked the wrong app when the name was a
+    /// prefix of another ('Notepad' matching 'Notepad++', etc.). Callers
+    /// should use the exact Start Menu shortcut name.
     /// </summary>
     private static string? ResolveLnkPath(string path)
     {
@@ -1006,8 +1010,8 @@ public static class TaskbarCommands
         if (path.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase) && File.Exists(path))
             return Path.GetFullPath(path);
 
-        string aExeName = Path.GetFileNameWithoutExtension(path);
-        string? aPartialMatch = null;
+        string aName = Path.GetFileNameWithoutExtension(path);
+        string? aSuffixMatch = null;
 
         foreach (string aSearchDir in SHORTCUT_SEARCH_PATHS) {
             if (!Directory.Exists(aSearchDir))
@@ -1017,16 +1021,19 @@ public static class TaskbarCommands
                 string aLnkName = Path.GetFileNameWithoutExtension(aLnk);
 
                 // Exact match — return immediately
-                if (aLnkName.Equals(aExeName, StringComparison.OrdinalIgnoreCase))
+                if (aLnkName.Equals(aName, StringComparison.OrdinalIgnoreCase))
                     return aLnk;
 
-                // Partial match — keep as fallback (first one wins)
-                if (aPartialMatch == null && aLnkName.IndexOf(aExeName, StringComparison.OrdinalIgnoreCase) >= 0)
-                    aPartialMatch = aLnk;
+                // '<name>_N' suffix match — remember as fallback if no
+                // exact match is found across all search paths
+                if (aSuffixMatch == null &&
+                    aLnkName.StartsWith(aName, StringComparison.OrdinalIgnoreCase) &&
+                    aLnkName.Length > aName.Length && aLnkName[aName.Length] == '_')
+                    aSuffixMatch = aLnk;
             }
         }
 
-        return aPartialMatch;
+        return aSuffixMatch;
 
     }
 

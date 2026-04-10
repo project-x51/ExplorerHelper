@@ -2,9 +2,12 @@
 
 Run these tests by asking Claude Code: "run the ExplorerHelper tests".
 
-The target machine is assumed to be a fresh Windows 11 install. Only apps guaranteed
-present on a clean install are used: Notepad, Microsoft Edge, Microsoft Store,
-UWP:Calculator, Windows PowerShell, Windows PowerShell ISE.
+The target machine is assumed to be a Windows 11 install with the classic
+PowerShell and Command Prompt shortcuts present. Apps used:
+Command Prompt, Microsoft Edge, UWP:Calculator, Windows PowerShell,
+Windows PowerShell ISE. Notepad is NOT used — on modern Win11 Notepad is a
+UWP-only app with no `.lnk` shortcut, which would trip the exact-match
+resolver.
 
 All tests must be executed in order — later tests depend on state set up by earlier
 tests. Record each test's result (PASS/FAIL) and a short note, then emit the final
@@ -45,24 +48,34 @@ or more numbered entries. Each entry is two lines: `  <n>. <DisplayName>` then
 
 ### T03 — Taskbar Pin single (queue only, no apply)
 **Prerequisite:** `LayoutModification.xml` does not exist (delete it if it does).
-**Run:** `Taskbar pin "Notepad" -Apply $false`
-**Expect:** Output contains `Taskbar: Queued pin for Notepad`.
+**Run:** `Taskbar pin "Command Prompt" -Apply $false`
+**Expect:** Output contains `Taskbar: Queued pin for Command Prompt`.
 **Verify:** `%LocalAppData%\Microsoft\Windows\Shell\LayoutModification.xml`
 exists and contains a `<taskbar:DesktopApp` element whose
-`DesktopApplicationLinkPath` ends in `Notepad.lnk`.
+`DesktopApplicationLinkPath` ends in `Command Prompt.lnk`.
 **Cleanup:** Delete `LayoutModification.xml` before proceeding so T04 starts
 with a fresh queue.
 
+### T03b — Taskbar Pin unknown name is exact-match (no substring fallback)
+**Run:** `Taskbar pin "Notepad" -Apply $false`
+**Expect:** Stderr contains
+`Taskbar: ERROR: Could not find a Start Menu shortcut for 'Notepad'.`
+followed by `Taskbar: ERROR: No apps could be resolved.`
+Under the old substring-fallback behaviour this would have silently matched
+`Notepad++.lnk` (or any other `*Notepad*.lnk` installed on the machine).
+**Verify:** `LayoutModification.xml` does not exist (no queue entry was made).
+
 ### T04 — Taskbar Pin multiple via -Apps (queue only)
 **Prerequisite:** `LayoutModification.xml` does not exist.
-**Run:** `Taskbar pin -Apps "Notepad, UWP:Calculator" -Apply $false`
+**Run:** `Taskbar pin -Apps "Command Prompt, UWP:Calculator" -Apply $false`
 **Expect:** Output contains a line `Taskbar: Matched UWP: <AUMID>` for the
-Calculator resolution, followed by `Taskbar: Queued pins for Notepad, Calculator`
+Calculator resolution, followed by
+`Taskbar: Queued pins for Command Prompt, Calculator`
 (plural form because two apps were queued).
 **Verify:** `LayoutModification.xml` contains both a `<taskbar:DesktopApp>`
-entry for Notepad and a `<taskbar:UWA AppUserModelID="...">` entry whose AUMID
-matches the one printed in the Matched UWP line (typically contains
-`Microsoft.WindowsCalculator`).
+entry for Command Prompt and a `<taskbar:UWA AppUserModelID="...">` entry
+whose AUMID matches the one printed in the Matched UWP line (typically
+contains `Microsoft.WindowsCalculator`).
 **Note:** Do NOT delete the XML — T05 needs it to be present first, then T05
 will clear it.
 
@@ -74,20 +87,20 @@ queue from T04 without applying).
 **Verify:** No Explorer restart occurred (Explorer PID is unchanged from
 before the command).
 
-### T06 — Taskbar Apply with pending pin (Notepad)
-**Prerequisite:** Notepad is NOT currently pinned. If `Taskbar list` shows
-Notepad, run `Taskbar unpin "Notepad"` first. No `LayoutModification.xml` on
-disk.
+### T06 — Taskbar Apply with pending pin (Command Prompt)
+**Prerequisite:** Command Prompt is NOT currently pinned. If `Taskbar list`
+shows Command Prompt, run `Taskbar unpin "Command Prompt"` first. No
+`LayoutModification.xml` on disk.
 **Run:**
 ```powershell
-Taskbar pin "Notepad" -Apply $false
+Taskbar pin "Command Prompt" -Apply $false
 Taskbar apply
 ```
 **Expect:** The second command triggers an Explorer restart and finishes by
 printing a consolidated summary that begins with `Taskbar:` on its own line,
-then one `  <n>. <state> - <name>` line per pinned item. The Notepad entry
-has state `Added`. All previously-pinned items have state `Pinned`.
-**Verify:** `Taskbar list` now includes `Notepad`. Item count is
+then one `  <n>. <state> - <name>` line per pinned item. The Command Prompt
+entry has state `Added`. All previously-pinned items have state `Pinned`.
+**Verify:** `Taskbar list` now includes `Command Prompt`. Item count is
 `$OriginalTaskbarCount + 1`. `LayoutModification.xml` has been deleted (see
 T22).
 
@@ -112,15 +125,16 @@ the taskbar from the original snapshot instead:
 `Taskbar apply "$env:TEMP\eh_tests_original.xml"`.
 
 ### T07 — Taskbar Unpin single
-**Prerequisite:** Notepad is pinned (from T06).
-**Run:** `Taskbar unpin "Notepad"`
-**Expect:** Output contains `Taskbar: Unpinned Notepad`.
-**Verify:** `Taskbar list` no longer shows Notepad. Item count is back to
-`$OriginalTaskbarCount`.
+**Prerequisite:** Command Prompt is pinned (from T06).
+**Run:** `Taskbar unpin "Command Prompt"`
+**Expect:** Output contains `Taskbar: Unpinned Command Prompt`.
+**Verify:** `Taskbar list` no longer shows Command Prompt. Item count is
+back to `$OriginalTaskbarCount`.
 
 ### T08 — Taskbar Unpin not-pinned
-**Run:** `Taskbar unpin "Notepad"` (immediately after T07 — Notepad is gone)
-**Expect:** Output contains `Taskbar: 'Notepad' is not pinned.`
+**Run:** `Taskbar unpin "Command Prompt"` (immediately after T07 — Command
+Prompt is gone)
+**Expect:** Output contains `Taskbar: 'Command Prompt' is not pinned.`
 **Verify:** No error, exit code 0. Item count unchanged.
 
 ### T08b — Taskbar Unpin exact-match (no substring fallback)
@@ -163,31 +177,35 @@ already exists). Exit code non-zero.
 followed by `Taskbar: ERROR: No apps could be resolved.`
 
 ### T11 — Taskbar Apply with -Order (reorder existing)
-**Prerequisite:** Both `Microsoft Edge` and `Microsoft Store` are pinned (they
-are by default on a fresh Windows 11). No `LayoutModification.xml`.
-**Run:** `Taskbar apply -Order "Microsoft Edge, Microsoft Store"`
+**Prerequisite:** `Microsoft Edge` is pinned (it is by default on a fresh
+Win11). `Command Prompt` is pinned — if not, run
+`Taskbar pin "Command Prompt" -Apply $true` first. No `LayoutModification.xml`.
+**Run:** `Taskbar apply -Order "Microsoft Edge, Command Prompt"`
 **Expect:** Consolidated output shows an Explorer restart and a summary
 beginning with `Taskbar:`. Position 1 is `Microsoft Edge`, position 2 is
-`Microsoft Store`. At least one of them is reported with state `Moved` if they
-were not already in that order, or `Pinned` for items whose predecessor did
-not change.
+`Command Prompt`. At least one of them is reported with state `Moved` if
+they were not already in that order.
 **Verify:** `Taskbar list` confirms positions 1 and 2 are
-`Microsoft Edge` then `Microsoft Store`.
+`Microsoft Edge` then `Command Prompt`.
 
 ### T12 — Taskbar Apply -Order idempotent
-**Run:** `Taskbar apply -Order "Microsoft Edge, Microsoft Store"` (same order)
+**Run:** `Taskbar apply -Order "Microsoft Edge, Command Prompt"` (same order)
 **Expect:** Exactly `Taskbar: No changes needed.`
 **Verify:** No Explorer restart (Explorer PID unchanged from after T11).
 
 ### T12b — Taskbar Apply from snapshot with -Order
 **Prerequisite:** A taskbar snapshot XML exists at
-`"$env:TEMP\eh_tests_original.xml"` (from Setup). The taskbar currently has
-`Microsoft Edge` in position 1 and `Microsoft Store` in position 2.
-**Run:** `Taskbar apply "$env:TEMP\eh_tests_original.xml" -Order "Microsoft Store, Microsoft Edge"`
-**Expect:** Output contains `Taskbar: Restored from snapshot.` Explorer restarts.
-**Verify:** `Taskbar list` shows `Microsoft Store` in position 1 and
-`Microsoft Edge` in position 2 (the reverse of T11 — the snapshot itself had
-Edge first, but `-Order` reordered its items before the restore).
+`"D:\Temp\eh_tests_original.xml"` (from Setup). The taskbar currently has
+`Microsoft Edge` in position 1 and `Command Prompt` in position 2 (from T11).
+Note: `eh_tests_original.xml` does NOT contain `Command Prompt` since it was
+taken in Setup before T11 pinned it.
+**Run:** `Taskbar apply "D:\Temp\eh_tests_original.xml" -Order "Microsoft Edge"`
+**Expect:** Output contains `Taskbar: Restored from snapshot.` Explorer
+restarts. Because the snapshot is the original (no Command Prompt), the
+`-Order` list just hoists Edge to position 1.
+**Verify:** `Taskbar list` shows `Microsoft Edge` in position 1. Item count
+equals `$OriginalTaskbarCount` (Command Prompt is no longer present — it
+wasn't in the snapshot).
 
 ### T12c — Taskbar Apply from LayoutModificationTemplate with -Order (rejected)
 **Prerequisite:** Any `LayoutModificationTemplate`-format XML file (e.g. one of
@@ -206,7 +224,7 @@ the app is already pinned and neither `aNewPinsAdded` nor `aOrderChanged` is set
 **Verify:** Item count is unchanged. No Explorer restart. `LayoutModification.xml`
 has been deleted.
 
-### T14 — Exact vs substring match: Windows PowerShell / ISE
+### T14 — Exact match required: Windows PowerShell / ISE pin cleanly
 **Prerequisite:** Neither `Windows PowerShell` nor `Windows PowerShell ISE` is
 currently pinned. Unpin either first if needed.
 **Run:**
@@ -220,21 +238,22 @@ apply step's summary lists two distinct `Added` entries — one for
 `Windows PowerShell` and one for `Windows PowerShell ISE` (not two copies of
 the same shortcut).
 **Verify:** `Taskbar list` shows `Windows PowerShell` and
-`Windows PowerShell ISE` as two separate items with different lnk paths. The
-ResolveLnkPath exact-match rule must win here; a bug would cause both pins to
-resolve to the same shortcut.
+`Windows PowerShell ISE` as two separate items with different lnk paths.
+The exact-match `ResolveLnkPath` must win here; with the old substring
+fallback, `Windows PowerShell` would have matched `Windows PowerShell ISE.lnk`
+first and both pins could have resolved to the same shortcut.
 **Cleanup:** `Taskbar unpin "Windows PowerShell, Windows PowerShell ISE"` so
 the count returns to `$OriginalTaskbarCount`.
 
 ### T15 — Taskbar Unpin comma-separated list
-**Prerequisite:** Pin Notepad and Windows PowerShell so the list has two
-removable targets: run
+**Prerequisite:** Pin Command Prompt and Windows PowerShell so the list has
+two removable targets: run
 ```powershell
-Taskbar pin -Apps "Notepad, Windows PowerShell"
+Taskbar pin -Apps "Command Prompt, Windows PowerShell"
 ```
 and wait for apply to finish.
-**Run:** `Taskbar unpin "Notepad, Windows PowerShell"`
-**Expect:** Output contains both `Taskbar: Unpinned Notepad` and
+**Run:** `Taskbar unpin "Command Prompt, Windows PowerShell"`
+**Expect:** Output contains both `Taskbar: Unpinned Command Prompt` and
 `Taskbar: Unpinned Windows PowerShell` lines.
 **Verify:** Neither app is in `Taskbar list`. Item count is back to
 `$OriginalTaskbarCount`.
