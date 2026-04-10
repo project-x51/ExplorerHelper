@@ -320,15 +320,43 @@ public class PinnedList3 : IDisposable
     public void Dispose()
     {
 
-        if (!_Disposed && _ComObject != IntPtr.Zero) {
-            Marshal.Release(_ComObject);
-            _ComObject = IntPtr.Zero;
-            _Disposed = true;
-        }
-
+        Dispose(disposing: true);
         GC.SuppressFinalize(this);
 
     }
 
-    ~PinnedList3() => this.Dispose();
+
+    /// <summary>
+    /// Standard dispose pattern. When disposing is true we were called
+    /// from user code (or 'using') and it's safe to release the COM
+    /// object on the current thread. When false we're on the finalizer
+    /// thread, which has no COM apartment affinity — calling Release
+    /// from there on an STA object can crash or hang. In that case we
+    /// leak the reference (which will be cleaned up on process exit)
+    /// and log a warning to stderr so the bug is visible in testing.
+    /// </summary>
+    protected virtual void Dispose(bool disposing)
+    {
+
+        if (_Disposed)
+            return;
+
+        if (!disposing) {
+            // Reached via the finalizer — something forgot to Dispose.
+            // Don't touch the COM object from here; just mark the
+            // instance as disposed so we don't run again.
+            Console.Error.WriteLine("PinnedList3: WARNING: instance finalized without Dispose() — COM reference leaked until process exit.");
+            _Disposed = true;
+            return;
+        }
+
+        if (_ComObject != IntPtr.Zero) {
+            Marshal.Release(_ComObject);
+            _ComObject = IntPtr.Zero;
+        }
+        _Disposed = true;
+
+    }
+
+    ~PinnedList3() => Dispose(disposing: false);
 }
