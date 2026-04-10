@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <RootNamespace>ExplorerHelper</RootNamespace>
+    <AssemblyName>ExplorerHelper</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Microsoft.CSharp" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <DeployDir>$(MSBuildProjectDirectory)\..\..\..\PC Setup\Tools\ExplorerHelper</DeployDir>
+    <ModuleDir>$(MSBuildProjectDirectory)\..\module</ModuleDir>
+  </PropertyGroup>
+
+  <Target Name="DeployModule" AfterTargets="Build">
+    <ItemGroup>
+      <ModuleFiles Include="$(ModuleDir)\ExplorerHelper.psm1" />
+      <ModuleFiles Include="$(ModuleDir)\ExplorerHelper.psd1" />
+    </ItemGroup>
+    <Copy SourceFiles="$(OutputPath)ExplorerHelper.dll" DestinationFolder="$(DeployDir)" />
+    <Copy SourceFiles="@(ModuleFiles)" DestinationFolder="$(DeployDir)" />
+    <Message Importance="high" Text="Deployed ExplorerHelper module (DLL + PSM1 + PSD1) to $(DeployDir)" />
+  </Target>
+</Project>
