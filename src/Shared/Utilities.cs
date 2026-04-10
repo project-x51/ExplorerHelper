@@ -2,6 +2,7 @@
 
 using System;
 using System.IO;
+using System.Linq;
 
 namespace ExplorerHelper.Shared;
 
@@ -40,11 +41,29 @@ public static class Utilities
             return Path.Combine(aTempDir, $"{filename}.xml");
         }
 
-        if (pathArg.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
+        if (pathArg!.EndsWith(".xml", StringComparison.OrdinalIgnoreCase))
             return Path.GetFullPath(pathArg);
 
         return Path.GetFullPath(
             Path.Combine(pathArg, $"{filename}_{DateTime.Now:yyyyMMdd_HHmmss}.xml"));
 
+    }
+
+
+    /// <summary>
+    /// Splits a user-supplied list of items separated by commas or
+    /// newlines. Trims whitespace and drops empty entries. Used for
+    /// pin/unpin/order/path lists from PowerShell here-strings.
+    /// </summary>
+    public static string[] SplitList(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return Array.Empty<string>();
+
+        return value
+            .Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(n => n.Trim())
+            .Where(n => n.Length > 0)
+            .ToArray();
     }
 }

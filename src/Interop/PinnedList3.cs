@@ -284,6 +284,9 @@ public class PinnedList3 : IDisposable
     {
 
         uint aSize = NativeMethods.ILGetSize(pidl);
+        if (aSize == 0)
+            return IntPtr.Zero;
+
         IntPtr aCopy = NativeMethods.CoTaskMemAlloc(aSize);
         if (aCopy == IntPtr.Zero)
             return IntPtr.Zero;

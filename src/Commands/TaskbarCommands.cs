@@ -183,7 +183,7 @@ public static class TaskbarCommands
 
         // Restore from snapshot file
         if (!string.IsNullOrEmpty(xmlPath))
-            return ApplyFromFile(xmlPath, order);
+            return ApplyFromFile(xmlPath!, order);
 
         // Merge pending pins + optional reorder
         return ApplyPending(order);
@@ -266,8 +266,7 @@ public static class TaskbarCommands
 
             // Parse order list
             string[] aOrderNames = order != null
-                ? order.Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
-                       .Select(n => n.Trim()).Where(n => n.Length > 0).ToArray()
+                ? Utilities.SplitList(order)
                 : Array.Empty<string>();
 
             if (aPendingPins.Count == 0 && aOrderNames.Length == 0) {
@@ -572,11 +571,7 @@ public static class TaskbarCommands
     public static int Pin(string apps, bool apply = true)
     {
 
-        string[] aEntries = apps
-            .Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
-            .Select(e => e.Trim())
-            .Where(e => e.Length > 0)
-            .ToArray();
+        string[] aEntries = Utilities.SplitList(apps);
 
         var aQueuedNames = new List<string>();
 
@@ -626,11 +621,7 @@ public static class TaskbarCommands
     public static int Unpin(string names)
     {
 
-        string[] aNames = names
-            .Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
-            .Select(n => n.Trim())
-            .Where(n => n.Length > 0)
-            .ToArray();
+        string[] aNames = Utilities.SplitList(names);
 
         int aResult = 0;
         using var aPinnedList = new PinnedList3();
@@ -918,9 +909,7 @@ public static class TaskbarCommands
 
         // Apply ordering if specified
         if (!string.IsNullOrEmpty(order)) {
-            string[] aOrderNames = order!
-                .Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
-                .Select(n => n.Trim()).Where(n => n.Length > 0).ToArray();
+            string[] aOrderNames = Utilities.SplitList(order!);
 
             var aOrdered = new List<(string DisplayName, string PinEntry)>();
             var aRemaining = new List<(string DisplayName, string PinEntry)>(aItems);

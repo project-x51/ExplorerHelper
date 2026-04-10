@@ -55,7 +55,7 @@ public static class QuickAccessCommands
         // Dedupe inputs on normalized full path (case-insensitive). Passing
         // the same path twice in one call would otherwise toggle it back off
         // because 'pintohome' is a toggle verb.
-        string[] aFolders = SplitPaths(paths)
+        string[] aFolders = Utilities.SplitList(paths)
             .Select(p => { try { return Path.GetFullPath(p); } catch { return p; } })
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
@@ -307,16 +307,6 @@ public static class QuickAccessCommands
 
         return aItems;
 
-    }
-
-
-    private static string[] SplitPaths(string paths)
-    {
-        return paths
-            .Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
-            .Select(f => f.Trim())
-            .Where(f => f.Length > 0)
-            .ToArray();
     }
 
 
