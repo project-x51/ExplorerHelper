@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Xml;
 
@@ -22,6 +23,53 @@ public static class QuickAccessCommands
 {
     // Shell namespace GUID for Quick Access
     private const string QUICK_ACCESS_GUID = "shell:::{679f85cb-0220-4080-b29b-5540cc05aab6}";
+
+
+    /// <summary>
+    /// Normalizes a path for equality comparison: resolves to full path
+    /// (expanding '..', relative segments) and strips any trailing
+    /// directory separator. Falls back to the trimmed input if the path
+    /// can't be resolved (UNC, shell namespace, etc.).
+    /// </summary>
+    private static string NormalizePath(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return path;
+        try {
+            return Path.GetFullPath(path).TrimEnd('\\', '/');
+        }
+        catch {
+            return path.TrimEnd('\\', '/');
+        }
+    }
+
+
+    /// <summary>
+    /// Case-insensitive path equality using NormalizePath on both sides.
+    /// </summary>
+    private static bool PathsEqual(string a, string b)
+        => string.Equals(NormalizePath(a), NormalizePath(b), StringComparison.OrdinalIgnoreCase);
+
+
+    /// <summary>
+    /// Creates a Shell.Application COM instance. Callers are responsible
+    /// for releasing it via ReleaseCom() in a finally block so the RCW
+    /// isn't left to the GC.
+    /// </summary>
+    private static dynamic CreateShell()
+        => Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
+
+
+    /// <summary>
+    /// Releases a COM RCW explicitly. Swallows exceptions — release is
+    /// best-effort cleanup.
+    /// </summary>
+    private static void ReleaseCom(object? com)
+    {
+        if (com == null)
+            return;
+        try { Marshal.FinalReleaseComObject(com); } catch { }
+    }
 
 
     /// <summary>
@@ -56,58 +104,61 @@ public static class QuickAccessCommands
         // the same path twice in one call would otherwise toggle it back off
         // because 'pintohome' is a toggle verb.
         string[] aFolders = Utilities.SplitList(paths)
-            .Select(p => { try { return Path.GetFullPath(p); } catch { return p; } })
+            .Select(NormalizePath)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-        var aPinnedPaths = GetPinnedItems();
-        int aResult = 0;
-        bool aChanged = false;
+        dynamic? aShell = null;
+        try {
+            aShell = CreateShell();
+            List<string> aPinnedPaths = GetPinnedItems(aShell);
+            int aResult = 0;
+            bool aChanged = false;
 
-        // Shared COM instance for the loop
-        dynamic aShell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
+            foreach (string aFolderPath in aFolders) {
+                bool aAlreadyPinned = aPinnedPaths.Any(p => PathsEqual(p, aFolderPath));
 
-        foreach (string aFolderPath in aFolders) {
-            bool aAlreadyPinned = aPinnedPaths.Any(p =>
-                string.Equals(p, aFolderPath, StringComparison.OrdinalIgnoreCase));
-
-            if (aAlreadyPinned) {
-                Console.WriteLine($"QuickAccess: Already pinned {aFolderPath}");
-                continue;
-            }
-
-            try {
-                dynamic aFolder = aShell.NameSpace(aFolderPath);
-                if (aFolder == null) {
-                    Console.Error.WriteLine($"QuickAccess: ERROR: Could not access folder '{aFolderPath}'.");
-                    aResult = 2;
+                if (aAlreadyPinned) {
+                    Console.WriteLine($"QuickAccess: Already pinned {aFolderPath}");
                     continue;
                 }
 
-                aFolder.Self.InvokeVerb("pintohome");
-                Console.WriteLine($"QuickAccess: Pinning {aFolderPath}");
-                aChanged = true;
+                try {
+                    dynamic aFolder = aShell.NameSpace(aFolderPath);
+                    if (aFolder == null) {
+                        Console.Error.WriteLine($"QuickAccess: ERROR: Could not access folder '{aFolderPath}'.");
+                        aResult = 2;
+                        continue;
+                    }
 
-                // Track the newly-pinned path so a later duplicate in the
-                // same invocation is caught as already pinned.
-                aPinnedPaths.Add(aFolderPath);
+                    aFolder.Self.InvokeVerb("pintohome");
+                    Console.WriteLine($"QuickAccess: Pinning {aFolderPath}");
+                    aChanged = true;
+
+                    // Track the newly-pinned path so a later duplicate in the
+                    // same invocation is caught as already pinned.
+                    aPinnedPaths.Add(aFolderPath);
+                }
+                catch (Exception x) {
+                    Console.Error.WriteLine($"QuickAccess: ERROR: {x.Message}");
+                    aResult = 2;
+                }
             }
-            catch (Exception x) {
-                Console.Error.WriteLine($"QuickAccess: ERROR: {x.Message}");
-                aResult = 2;
+
+            if (aChanged && restart) {
+                Console.WriteLine("QuickAccess: Restarting Explorer");
+                ExplorerCommands.Restart();
             }
-        }
+            else if (aChanged)
+                Console.WriteLine("QuickAccess: Pins applied. Restart Explorer to refresh.");
+            else
+                Console.WriteLine("QuickAccess: No changes needed.");
 
-        if (aChanged && restart) {
-            Console.WriteLine("QuickAccess: Restarting Explorer");
-            ExplorerCommands.Restart();
+            return aResult;
         }
-        else if (aChanged)
-            Console.WriteLine("QuickAccess: Pins applied. Restart Explorer to refresh.");
-        else
-            Console.WriteLine("QuickAccess: No changes needed.");
-
-        return aResult;
+        finally {
+            ReleaseCom(aShell);
+        }
 
     }
 
@@ -118,8 +169,9 @@ public static class QuickAccessCommands
     public static int Unpin(string folderPath)
     {
 
+        dynamic? aShell = null;
         try {
-            dynamic aShell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
+            aShell = CreateShell();
             dynamic aQuickAccess = aShell.NameSpace(QUICK_ACCESS_GUID);
             if (aQuickAccess == null) {
                 Console.Error.WriteLine("QuickAccess: ERROR: Could not access Quick Access namespace.");
@@ -127,8 +179,7 @@ public static class QuickAccessCommands
             }
 
             foreach (dynamic aItem in aQuickAccess.Items()) {
-                string aItemPath = aItem.Path;
-                if (string.Equals(aItemPath, folderPath, StringComparison.OrdinalIgnoreCase)) {
+                if (PathsEqual((string)aItem.Path, folderPath)) {
                     aItem.InvokeVerb("unpinfromhome");
                     Console.WriteLine($"QuickAccess: Unpinned {folderPath}");
                     return 0;
@@ -141,6 +192,9 @@ public static class QuickAccessCommands
         catch (Exception x) {
             Console.Error.WriteLine($"QuickAccess: ERROR: {x.Message}");
             return 2;
+        }
+        finally {
+            ReleaseCom(aShell);
         }
 
     }
@@ -189,6 +243,7 @@ public static class QuickAccessCommands
     public static int Apply(string xmlPath, bool restart = true)
     {
 
+        dynamic? aShell = null;
         try
         {
             if (!File.Exists(xmlPath)) {
@@ -211,22 +266,22 @@ public static class QuickAccessCommands
                 return 0;
             }
 
-            var aCurrentPaths = GetPinnedItems();
+            aShell = CreateShell();
+            List<string> aCurrentPaths = GetPinnedItems(aShell);
             bool aChanged = false;
 
-            // Shared COM instance for both loops
-            dynamic aShell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
+            // Fetch the Quick Access namespace once — reused by the unpin
+            // loop below. The Items() enumeration inside is cheap.
+            dynamic aQuickAccess = aShell.NameSpace(QUICK_ACCESS_GUID);
 
             // Unpin items not in the snapshot
             foreach (string aCurrent in aCurrentPaths) {
-                bool aInSnapshot = aDesiredPaths.Any(d =>
-                    string.Equals(d, aCurrent, StringComparison.OrdinalIgnoreCase));
+                bool aInSnapshot = aDesiredPaths.Any(d => PathsEqual(d, aCurrent));
 
                 if (!aInSnapshot) {
                     try {
-                        dynamic aQuickAccess = aShell.NameSpace(QUICK_ACCESS_GUID);
                         foreach (dynamic aItem in aQuickAccess.Items()) {
-                            if (string.Equals((string)aItem.Path, aCurrent, StringComparison.OrdinalIgnoreCase)) {
+                            if (PathsEqual((string)aItem.Path, aCurrent)) {
                                 aItem.InvokeVerb("unpinfromhome");
                                 Console.WriteLine($"QuickAccess: Unpinning {aCurrent}");
                                 aChanged = true;
@@ -240,10 +295,9 @@ public static class QuickAccessCommands
 
             // Pin items from the snapshot that aren't currently pinned
             // Re-read current state after unpins
-            aCurrentPaths = GetPinnedItems();
+            aCurrentPaths = GetPinnedItems(aShell);
             foreach (string aDesired in aDesiredPaths) {
-                bool aAlreadyPinned = aCurrentPaths.Any(c =>
-                    string.Equals(c, aDesired, StringComparison.OrdinalIgnoreCase));
+                bool aAlreadyPinned = aCurrentPaths.Any(c => PathsEqual(c, aDesired));
 
                 if (aAlreadyPinned) {
                     Console.WriteLine($"QuickAccess: Already pinned {aDesired}");
@@ -281,6 +335,9 @@ public static class QuickAccessCommands
             Console.Error.WriteLine($"QuickAccess: ERROR: {x.Message}");
             return 2;
         }
+        finally {
+            ReleaseCom(aShell);
+        }
 
     }
 
@@ -290,11 +347,31 @@ public static class QuickAccessCommands
     /// </summary>
     public static List<string> GetPinnedItems()
     {
+        dynamic? aShell = null;
+        try {
+            aShell = CreateShell();
+            return GetPinnedItems(aShell);
+        }
+        catch {
+            return new List<string>();
+        }
+        finally {
+            ReleaseCom(aShell);
+        }
+    }
+
+
+    /// <summary>
+    /// Returns all paths currently pinned to Quick Access using a caller-
+    /// provided Shell.Application instance. The caller owns the COM object
+    /// lifetime.
+    /// </summary>
+    private static List<string> GetPinnedItems(dynamic shell)
+    {
 
         var aItems = new List<string>();
         try {
-            dynamic aShell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
-            dynamic aQuickAccess = aShell.NameSpace(QUICK_ACCESS_GUID);
+            dynamic aQuickAccess = shell.NameSpace(QUICK_ACCESS_GUID);
             if (aQuickAccess == null)
                 return aItems;
 
