@@ -112,20 +112,23 @@ public static class TaskbarCommands
 
             using var aPinnedList = new PinnedList3();
             var aItems = aPinnedList.GetOrderedItemsWithPidls();
+            try
+            {
+                var aTempPaths = CopyLnkFiles(aItems, aLinksDir);
+                WriteSnapshotXml(aSnapshotPath, aItems, aTempPaths);
 
-            var aTempPaths = CopyLnkFiles(aItems, aLinksDir);
-
-            WriteSnapshotXml(aSnapshotPath, aItems, aTempPaths);
-
-            foreach (var aItem in aItems) {
-                if (aItem.Pidl != IntPtr.Zero)
-                    NativeMethods.CoTaskMemFree(aItem.Pidl);
+                Console.WriteLine($"Taskbar: Snapshot saved to {aSnapshotPath}");
+                Console.WriteLine($"  Items: {aItems.Count}");
+                Console.WriteLine($"  Links: {aTempPaths.Count}");
+                return 0;
             }
-
-            Console.WriteLine($"Taskbar: Snapshot saved to {aSnapshotPath}");
-            Console.WriteLine($"  Items: {aItems.Count}");
-            Console.WriteLine($"  Links: {aTempPaths.Count}");
-            return 0;
+            finally
+            {
+                foreach (var aItem in aItems) {
+                    if (aItem.Pidl != IntPtr.Zero)
+                        NativeMethods.CoTaskMemFree(aItem.Pidl);
+                }
+            }
         }
         catch (Exception x)
         {
