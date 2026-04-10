@@ -397,11 +397,13 @@ public static class TaskbarCommands
                     aItemStates[aKey] = "Pinned";
             }
 
-            // Clean up pending XML regardless of whether we apply
-            try { File.Delete(LAYOUT_MOD_PATH); } catch { /* best effort */ }
-
             // Skip the expensive rebuild if nothing changed
             if (!aNewPinsAdded && !aOrderChanged) {
+                // We're NOT going to call ApplyFromFile, so the queue on
+                // disk won't be consumed by the normal apply path. Delete
+                // it here — otherwise the same pending pins would be read
+                // again on the next apply call.
+                try { File.Delete(LAYOUT_MOD_PATH); } catch { /* best effort */ }
                 Console.WriteLine("Taskbar: No changes needed.");
                 return 0;
             }
@@ -410,6 +412,13 @@ public static class TaskbarCommands
             // owns the unpin step now — doing it here too would be wasted work
             // and would invalidate aCurrentItems' PIDLs before the finally
             // runs.
+            //
+            // Note: the pending XML at LAYOUT_MOD_PATH is intentionally NOT
+            // deleted here. ApplyFromFile -> ApplyLayoutXml overwrites it
+            // atomically with the new layout XML, then CleanupLayoutXml
+            // deletes it after Explorer has consumed it. Deleting first
+            // would leave a brief window where a crash between delete and
+            // write would lose both the queued work AND the destination.
             string aSnapshotPath = Path.Combine(aTempDir, "merged.xml");
             WriteSnapshotXml(aSnapshotPath, aMerged, aTempPaths);
 
