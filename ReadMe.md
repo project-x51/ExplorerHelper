@@ -33,7 +33,7 @@ The snapshot file is a plain XML document — items are in line order, so rearra
 
 ### pin
 
-Resolves desktop apps to Start Menu `.lnk` shortcuts and queues them for the next `apply`. Entries prefixed with `UWP:` are resolved as UWP/Store apps by matching the supplied regex against `Get-AppxPackage` names.
+Resolves desktop apps to Start Menu `.lnk` shortcuts and queues them for the next `apply`. Entries prefixed with `UWP:` are resolved as UWP/Store apps by matching the supplied pattern against `Get-AppxPackage` names via PowerShell's `-match` operator.
 
 ```
 -Apps <csv>          Comma/newline-separated list of apps (here-string friendly)
@@ -43,11 +43,16 @@ Resolves desktop apps to Start Menu `.lnk` shortcuts and queues them for the nex
 
 A positional `<app>` argument is equivalent to `-Apps <app>` for single-app pins.
 
-The app name may contain `*` and `?` glob wildcards; a wildcard pattern resolves to every matching Start Menu shortcut. Without wildcards, an exact match is preferred.
+**Desktop app matching:** exact Start Menu shortcut name first, substring fallback. `Taskbar pin "Word"` finds `Word 2016.lnk`.
+
+**UWP pattern matching:** `-match` is a substring-regex, so `UWP:Calculator` finds `Microsoft.WindowsCalculator`. The pattern IS a regex, though, so metacharacters like `.`, `+`, `(`, `[` are interpreted — if you need to match a literal metacharacter, escape it (e.g. `UWP:Paint\.NET`).
 
 ### unpin
 
-Accepts a single name or a comma-separated list. For each name, finds the matching pinned shortcut (substring match) and unpins it.
+Accepts a single name or a comma-separated list. Matching rules:
+
+- **No wildcard** — case-insensitive exact match on the pinned shortcut's display name (filename without `.lnk`). This is stricter than it used to be: `Taskbar unpin "Windows PowerShell"` will not touch `Windows PowerShell ISE`. Prints `'<name>' is not pinned.` if nothing matches.
+- **Glob wildcard** (`*` or `?` anywhere in the name) — unpins every pinned shortcut whose name matches the glob. `Taskbar unpin "Windows Power*"` removes both PowerShell and PowerShell ISE.
 
 ### apply
 
