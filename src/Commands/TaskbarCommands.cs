@@ -286,6 +286,8 @@ public static class TaskbarCommands
             // Snapshot current state with PIDLs
             using var aPinnedList = new PinnedList3();
             var aCurrentItems = aPinnedList.GetOrderedItemsWithPidls();
+            try
+            {
             var aTempPaths = CopyLnkFiles(aCurrentItems, aLinksDir);
 
             // Build merged list: current + pending (skip duplicates)
@@ -402,20 +404,17 @@ public static class TaskbarCommands
 
             // Skip the expensive rebuild if nothing changed
             if (!aNewPinsAdded && !aOrderChanged) {
-                foreach (var aItem in aCurrentItems) {
-                    if (aItem.Pidl != IntPtr.Zero)
-                        NativeMethods.CoTaskMemFree(aItem.Pidl);
-                }
                 Console.WriteLine("Taskbar: No changes needed.");
                 return 0;
             }
 
-            // Write merged snapshot
+            // Write merged snapshot and hand off to ApplyFromFile. ApplyFromFile
+            // owns the unpin step now — doing it here too would be wasted work
+            // and would invalidate aCurrentItems' PIDLs before the finally
+            // runs.
             string aSnapshotPath = Path.Combine(aTempDir, "merged.xml");
             WriteSnapshotXml(aSnapshotPath, aMerged, aTempPaths);
 
-            // Unpin all and apply
-            aPinnedList.UnpinAll(aCurrentItems);
             int aApplyResult = ApplyFromFile(aSnapshotPath);
 
             // Show consolidated result
@@ -427,6 +426,17 @@ public static class TaskbarCommands
             }
 
             return aApplyResult;
+            }
+            finally
+            {
+                // Free every PIDL regardless of control flow (success, no-op,
+                // or exception). The list records themselves are left with
+                // zeroed IntPtrs but are no longer used after this point.
+                foreach (var aItem in aCurrentItems) {
+                    if (aItem.Pidl != IntPtr.Zero)
+                        NativeMethods.CoTaskMemFree(aItem.Pidl);
+                }
+            }
         }
         catch (Exception x)
         {
