@@ -52,10 +52,20 @@ public static class QuickAccessCommands
     public static int Pin(string paths, bool restart = true)
     {
 
-        string[] aFolders = SplitPaths(paths);
+        // Dedupe inputs on normalized full path (case-insensitive). Passing
+        // the same path twice in one call would otherwise toggle it back off
+        // because 'pintohome' is a toggle verb.
+        string[] aFolders = SplitPaths(paths)
+            .Select(p => { try { return Path.GetFullPath(p); } catch { return p; } })
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
         var aPinnedPaths = GetPinnedItems();
         int aResult = 0;
         bool aChanged = false;
+
+        // Shared COM instance for the loop
+        dynamic aShell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
 
         foreach (string aFolderPath in aFolders) {
             bool aAlreadyPinned = aPinnedPaths.Any(p =>
@@ -67,7 +77,6 @@ public static class QuickAccessCommands
             }
 
             try {
-                dynamic aShell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application")!)!;
                 dynamic aFolder = aShell.NameSpace(aFolderPath);
                 if (aFolder == null) {
                     Console.Error.WriteLine($"QuickAccess: ERROR: Could not access folder '{aFolderPath}'.");
@@ -78,6 +87,10 @@ public static class QuickAccessCommands
                 aFolder.Self.InvokeVerb("pintohome");
                 Console.WriteLine($"QuickAccess: Pinning {aFolderPath}");
                 aChanged = true;
+
+                // Track the newly-pinned path so a later duplicate in the
+                // same invocation is caught as already pinned.
+                aPinnedPaths.Add(aFolderPath);
             }
             catch (Exception x) {
                 Console.Error.WriteLine($"QuickAccess: ERROR: {x.Message}");

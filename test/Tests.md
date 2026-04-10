@@ -306,6 +306,16 @@ pinned, run `QuickAccess unpin "D:\Temp"` first.
 **Run:** `QuickAccess unpin "D:\Temp"` (immediately after T26)
 **Expect:** Output contains `QuickAccess: 'D:\Temp' is not pinned.`
 
+### T27b — QuickAccess Pin dedupes duplicate paths
+**Prerequisite:** `C:\Windows` is NOT currently pinned.
+**Run:** `QuickAccess pin -Paths "C:\Windows, C:\Windows" -RestartExplorer $false`
+**Expect:** Output contains `QuickAccess: Pinning C:\Windows` exactly ONCE
+(not twice). Duplicates in the input list are deduped so the toggling
+`pintohome` verb is not invoked twice on the same path.
+**Verify:** `QuickAccess list` contains `C:\Windows`. It is still pinned
+(a double invocation would have toggled it back off).
+**Cleanup:** `QuickAccess unpin "C:\Windows"`
+
 ### T28 — QuickAccess Snapshot
 **Run:** `QuickAccess snapshot "D:\Temp\eh_tests_qa.xml"`
 **Expect:** Output contains `QuickAccess: Snapshot saved to
