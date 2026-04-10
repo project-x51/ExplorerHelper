@@ -541,23 +541,7 @@ public static class TaskbarCommands
             // in C# rather than building a PS pipeline so we can pass an
             // arbitrary number of AUMIDs without worrying about quoting.
             string aScript = "Get-StartApps | ForEach-Object { \"$($_.Name)`t$($_.AppID)\" }";
-            string aEncoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(aScript));
-
-            var aProcess = new Process {
-                StartInfo = new ProcessStartInfo {
-                    FileName = "powershell",
-                    Arguments = $"-NoProfile -EncodedCommand {aEncoded}",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                }
-            };
-
-            aProcess.Start();
-            string aOutput = aProcess.StandardOutput.ReadToEnd();
-            aProcess.StandardError.ReadToEnd();
-            aProcess.WaitForExit(10000);
+            string aOutput = RunPowerShell(aScript);
 
             var aWanted = new HashSet<string>(aumids, StringComparer.OrdinalIgnoreCase);
             foreach (string aLine in aOutput.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) {
@@ -740,16 +724,24 @@ public static class TaskbarCommands
 
 
     /// <summary>
-    /// Searches installed UWP packages for an AUMID matching the given regex
-    /// by invoking PowerShell's Get-AppxPackage.
+    /// Searches installed UWP packages for an AUMID whose package Name
+    /// case-insensitively contains the given pattern. The pattern is
+    /// treated as a literal substring (not a regex) so that characters
+    /// like '.', '+', '(' behave as users expect. The pattern is passed
+    /// to PowerShell via a parameter binding rather than interpolated
+    /// into the script, so quoting is safe.
     /// </summary>
     private static string? FindUwpAumid(string pattern)
     {
 
         try
         {
+            // Read the pattern from stdin so there's no interpolation at
+            // all. First line of stdin is the pattern; PowerShell does a
+            // case-insensitive Contains() against each package Name.
             string aScript =
-                "Get-AppxPackage | Where-Object { $_.Name -match '" + pattern.Replace("'", "''") + "' } | ForEach-Object {\n" +
+                "$pattern = [Console]::In.ReadLine()\n" +
+                "Get-AppxPackage | Where-Object { $_.Name.ToLowerInvariant().Contains($pattern.ToLowerInvariant()) } | ForEach-Object {\n" +
                 "  $pkg = $_\n" +
                 "  try {\n" +
                 "    $manifest = Get-AppxPackageManifest -Package $pkg.PackageFullName\n" +
@@ -759,23 +751,7 @@ public static class TaskbarCommands
                 "  } catch { }\n" +
                 "} | Select-Object -First 1";
 
-            string aEncoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(aScript));
-
-            var aProcess = new Process {
-                StartInfo = new ProcessStartInfo {
-                    FileName = "powershell",
-                    Arguments = $"-NoProfile -EncodedCommand {aEncoded}",
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                }
-            };
-
-            aProcess.Start();
-            string aOutput = aProcess.StandardOutput.ReadToEnd().Trim();
-            aProcess.StandardError.ReadToEnd(); // discard progress/CLIXML noise
-            aProcess.WaitForExit(10000);
+            string aOutput = RunPowerShell(aScript, stdinInput: pattern).Trim();
 
             if (!string.IsNullOrEmpty(aOutput)) {
                 Console.WriteLine($"Taskbar: Matched UWP: {aOutput}");
@@ -788,6 +764,50 @@ public static class TaskbarCommands
         }
 
         return null;
+
+    }
+
+
+    /// <summary>
+    /// Runs a PowerShell script in a child powershell.exe via
+    /// -EncodedCommand, reading stdout and stderr asynchronously (so
+    /// neither can deadlock on a full pipe buffer) and optionally
+    /// writing a string to the child's stdin before closing it.
+    /// Returns stdout. Stderr is discarded (PowerShell emits progress
+    /// and CLIXML noise there).
+    /// </summary>
+    private static string RunPowerShell(string script, string? stdinInput = null, int timeoutMs = 10000)
+    {
+
+        string aEncoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+
+        var aProcess = new Process {
+            StartInfo = new ProcessStartInfo {
+                FileName = "powershell",
+                Arguments = $"-NoProfile -EncodedCommand {aEncoded}",
+                RedirectStandardInput = stdinInput != null,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+
+        var aStdout = new StringBuilder();
+        aProcess.OutputDataReceived += (_, e) => { if (e.Data != null) aStdout.AppendLine(e.Data); };
+        aProcess.ErrorDataReceived += (_, _) => { /* discard */ };
+
+        aProcess.Start();
+        aProcess.BeginOutputReadLine();
+        aProcess.BeginErrorReadLine();
+
+        if (stdinInput != null) {
+            aProcess.StandardInput.WriteLine(stdinInput);
+            aProcess.StandardInput.Close();
+        }
+
+        aProcess.WaitForExit(timeoutMs);
+        return aStdout.ToString();
 
     }
 
