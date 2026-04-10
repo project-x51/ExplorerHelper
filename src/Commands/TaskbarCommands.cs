@@ -706,8 +706,17 @@ public static class TaskbarCommands
 
         if (File.Exists(LAYOUT_MOD_PATH)) {
             string aExisting = File.ReadAllText(LAYOUT_MOD_PATH);
-            if (aExisting.Contains(pinElement))
-                return;
+
+            // Exact-line dedupe (trimmed). A bare Contains(pinElement)
+            // check would false-positive when pinElement is a prefix of
+            // another queued line — e.g. queueing 'Foo!App' after
+            // 'Foo!AppExt' would be skipped because 'Foo!App' is a
+            // substring of 'Foo!AppExt'.
+            foreach (string aLine in aExisting.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) {
+                if (aLine.Trim() == pinElement.Trim())
+                    return;
+            }
+
             if (aExisting.Contains("</taskbar:TaskbarPinList>")) {
                 string aXml = aExisting.Replace("</taskbar:TaskbarPinList>",
                     $"        {pinElement}\n      </taskbar:TaskbarPinList>");
