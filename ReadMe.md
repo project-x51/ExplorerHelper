@@ -4,6 +4,8 @@ A Windows 11 shell automation library (.NET Framework 4.8, x64) that handles she
 
 The PowerShell module exports four functions: `Taskbar`, `QuickAccess`, `Explorer`, and `ExplorerHelper`. Each dispatches to a static method on the matching C# class.
 
+For internals (how the layout XML queue works, how apply merges pending pins, the COM interfaces used for taskbar pinning, the build / post-build deploy, etc.) see [`src/Implementation.md`](src/Implementation.md).
+
 ## Taskbar
 
 ```
@@ -22,7 +24,7 @@ Taskbar apply $false                               Skip apply (no-op, for setup 
 
 ### pin
 
-Resolves desktop apps to Start Menu `.lnk` shortcuts and queues them into `LayoutModification.xml`. Entries prefixed with `UWP:` are resolved as UWP/Store apps by matching the supplied regex against `Get-AppxPackage` names.
+Resolves desktop apps to Start Menu `.lnk` shortcuts and queues them for the next `apply`. Entries prefixed with `UWP:` are resolved as UWP/Store apps by matching the supplied regex against `Get-AppxPackage` names.
 
 ```
 -Apps <csv>          Comma/newline-separated list of apps (here-string friendly)
@@ -32,11 +34,13 @@ Resolves desktop apps to Start Menu `.lnk` shortcuts and queues them into `Layou
 
 A positional `<app>` argument is equivalent to `-Apps <app>` for single-app pins.
 
+The app name may contain `*` and `?` glob wildcards; a wildcard pattern resolves to every matching Start Menu shortcut. Without wildcards, an exact match is preferred.
+
 ### apply
 
-When called **without a path**: reads pending pins from `LayoutModification.xml`, snapshots the current taskbar, merges new pins (appended at end, duplicates skipped), optionally reorders, then rebuilds via unpinall + `PinListPlacement="Replace"` + Explorer restart. If nothing changed, the expensive rebuild is skipped. Prints a consolidated result showing each item's state (`Added`, `Moved`, `Pinned`).
+When called **without a path**: merges pending pins with the current taskbar (new items appended at end, duplicates skipped), optionally reorders, and rebuilds the taskbar. If nothing changed, the rebuild is skipped. Prints a consolidated result showing each item's state (`Added`, `Moved`, `Pinned`).
 
-When called **with a snapshot path**: restores the taskbar from that file (unpinall first, then replace). Note that `-Order` is ignored in this mode.
+When called **with a snapshot path**: restores the taskbar from that file. Note that `-Order` is ignored in this mode.
 
 When called **with `$false`** as the target (PowerShell wrapper only): prints `Apply skipped.` and does nothing. This is a convenience for setup scripts that want a single line controlled by a boolean.
 
@@ -45,9 +49,11 @@ When called **with `$false`** as the target (PowerShell wrapper only): prints `A
                      Matching is: exact → '<name>_N' suffix → substring.
 ```
 
+See [`src/Implementation.md`](src/Implementation.md) for the internals of pending-pin merging, the matching cascade, and how the rebuild is performed.
+
 ### unpin
 
-Accepts a single name or a comma-separated list. For each name, finds a matching `.lnk` in the pinned taskbar folder (substring match), resolves it to a PIDL, and unpins via `IPinnedList3::Modify`.
+Accepts a single name or a comma-separated list. For each name, finds the matching pinned shortcut (substring match) and unpins it.
 
 ### snapshot
 
@@ -56,20 +62,7 @@ Saves the current taskbar state to XML and copies all `.lnk` files to a `links/`
 - A folder → `<folder>\snapshot_<datetime>.xml`
 - An `.xml` file → exact path (overwritten if exists)
 
-### Snapshot XML format
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<TaskbarSnapshot timestamp="2026-04-08T15:17:32" count="33">
-  <Item displayName="Outlook 2016" type="Desktop"
-        lnkPath="C:\...\TaskBar\Outlook 2016.lnk"
-        path="links/Outlook 2016.lnk"/>
-  <Item displayName="Claude" type="UWP"
-        appUserModelId="Claude_pzs8sxrjxfjjc!Claude"/>
-</TaskbarSnapshot>
-```
-
-Order is determined by line order — rearrange items by cut/paste. Edit `displayName` to rename shortcuts in the taskbar tooltip (not widely used yet).
+The snapshot file is a plain XML document — items are in line order, so rearranging them by cut/paste reorders the taskbar on restore, and editing `displayName` renames the tooltip. See [`src/Implementation.md`](src/Implementation.md) for the schema.
 
 ## QuickAccess
 
@@ -82,7 +75,7 @@ QuickAccess snapshot [path]                        Snapshot Quick Access to XML
 QuickAccess apply <snapshot.xml>                   Apply (reconcile) Quick Access from a snapshot
 ```
 
-Pin and apply accept comma/newline-separated lists and trim whitespace for use with PowerShell here-strings. Both are idempotent — pin checks the current state before invoking the `pintohome` verb (whose underlying behaviour is a toggle), and apply unpins anything not in the snapshot and pins anything missing. Explorer is only restarted if something actually changed.
+Pin and apply accept comma/newline-separated lists and trim whitespace for use with PowerShell here-strings. Both are idempotent — pin checks the current state before pinning, and apply unpins anything not in the snapshot and pins anything missing. Explorer is only restarted if something actually changed.
 
 ```
 -RestartExplorer $true|$false    Restart Explorer after changes (default: $true)
@@ -90,15 +83,7 @@ Pin and apply accept comma/newline-separated lists and trim whitespace for use w
 
 ### snapshot
 
-Default path (when omitted) is `%TEMP%\ExplorerHelper_QA_Snapshot_<datetime>\quickaccess.xml`. Folder and `.xml` file arguments work the same as for `Taskbar snapshot`.
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<QuickAccessSnapshot timestamp="2026-04-08T15:17:32" count="5">
-  <Item path="D:\Dropbox"/>
-  <Item path="D:\Temp"/>
-</QuickAccessSnapshot>
-```
+Default path (when omitted) is `%TEMP%\ExplorerHelper_QA_Snapshot_<datetime>\quickaccess.xml`. Folder and `.xml` file arguments work the same as for `Taskbar snapshot`. The file is a simple list of `<Item path="…"/>` entries.
 
 ## Explorer
 
@@ -107,7 +92,7 @@ Explorer restart                                   Restart Windows Explorer
 Explorer restart $false                            No-op (for conditional script lines)
 ```
 
-Kills all `explorer.exe` processes, waits for exit, relaunches the shell, and cleans up any leftover `LayoutModification.xml` (with a 5-retry loop in case Explorer still holds the file). Pass `$false` to skip entirely.
+Restarts Windows Explorer and cleans up any leftover layout XML from a pending pin operation. Pass `$false` to skip entirely (useful when a boolean flag controls whether a setup step should restart).
 
 ## ExplorerHelper
 
@@ -180,15 +165,7 @@ QuickAccess apply    "D:\Temp\qa_backup.xml"
 
 ## Build
 
-- **Source:** `D:\Dropbox\IT\scripts\tools\ExplorerHelper\src\`
-- **Project:** `src\ExplorerHelper.csproj` (`OutputType=Library`, `TargetFramework=net48`, `PlatformTarget=x64`)
-- **Output:** `D:\Dropbox\IT\scripts\PC Setup\Tools\ExplorerHelper\ExplorerHelper.dll`
-
-```
-dotnet build -c Release
-```
-
-A `CopyToToolsFolder` post-build target automatically copies `ExplorerHelper.dll` next to the `.psm1` / `.psd1` module files, so a rebuild is all that's needed to deploy.
+To rebuild and deploy the DLL, see [`src/Implementation.md`](src/Implementation.md).
 
 ## Tests
 
