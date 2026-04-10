@@ -590,7 +590,7 @@ public static class TaskbarCommands
                     Console.Error.WriteLine($"Taskbar: ERROR: No installed UWP app matches '{aPattern}'.");
                     continue;
                 }
-                QueuePinEntry($"<taskbar:UWA AppUserModelID=\"{aAumid}\"/>", aAumid);
+                QueuePinEntry($"<taskbar:UWA AppUserModelID=\"{Utilities.XmlEscape(aAumid)}\"/>", aAumid);
                 aQueuedNames.Add(aPattern);
             }
             else {
@@ -600,7 +600,7 @@ public static class TaskbarCommands
                     continue;
                 }
                 string aName = Path.GetFileNameWithoutExtension(aLnkPath);
-                QueuePinEntry($"<taskbar:DesktopApp DesktopApplicationLinkPath=\"{aLnkPath}\"/>", aName);
+                QueuePinEntry($"<taskbar:DesktopApp DesktopApplicationLinkPath=\"{Utilities.XmlEscape(aLnkPath)}\"/>", aName);
                 aQueuedNames.Add(aName);
             }
         }
@@ -909,12 +909,12 @@ public static class TaskbarCommands
                     aResolvedPath = aLnkPath;
 
                 if (aResolvedPath != null)
-                    aItems.Add((aDisplayName, $"        <taskbar:DesktopApp DesktopApplicationLinkPath=\"{aResolvedPath}\"/>"));
+                    aItems.Add((aDisplayName, $"        <taskbar:DesktopApp DesktopApplicationLinkPath=\"{Utilities.XmlEscape(aResolvedPath)}\"/>"));
             }
             else if (aType == "UWP") {
                 string? aAumid = aElem.GetAttribute("appUserModelId");
                 if (!string.IsNullOrEmpty(aAumid))
-                    aItems.Add((aDisplayName, $"        <taskbar:UWA AppUserModelID=\"{aAumid}\"/>"));
+                    aItems.Add((aDisplayName, $"        <taskbar:UWA AppUserModelID=\"{Utilities.XmlEscape(aAumid)}\"/>"));
             }
         }
 
