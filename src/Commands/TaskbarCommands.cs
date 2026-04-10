@@ -329,13 +329,11 @@ public static class TaskbarCommands
                 if (aAlreadyPinned)
                     continue;
 
-                // Copy new .lnk to temp links dir
-                if (aPending.LnkPath != null && File.Exists(aPending.LnkPath)) {
-                    string aDest = Path.Combine(aLinksDir, Path.GetFileName(aPending.LnkPath));
-                    if (!File.Exists(aDest))
-                        File.Copy(aPending.LnkPath, aDest);
-                    aTempPaths[aPending.LnkPath] = "links/" + Path.GetFileName(aDest);
-                }
+                // Copy new .lnk to temp links dir using the shared helper
+                // so filename collisions get a suffix rather than silently
+                // mapping the new pin to an unrelated previously-copied file.
+                if (aPending.LnkPath != null)
+                    CopyLnkFile(aPending.LnkPath, aLinksDir, aTempPaths);
 
                 aMerged.Add(aPending);
                 aItemStates[aPending.DisplayName] = "Added";
@@ -797,24 +795,40 @@ public static class TaskbarCommands
         var aMapping = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var aItem in items) {
-            if (aItem.LnkPath == null || !File.Exists(aItem.LnkPath))
-                continue;
-
-            string aDestName = Path.GetFileName(aItem.LnkPath);
-            string aDest = Path.Combine(targetDir, aDestName);
-
-            int aSuffix = 1;
-            while (File.Exists(aDest)) {
-                string aBase = Path.GetFileNameWithoutExtension(aDestName);
-                aDest = Path.Combine(targetDir, $"{aBase}_{aSuffix}{Path.GetExtension(aDestName)}");
-                aSuffix++;
-            }
-
-            File.Copy(aItem.LnkPath, aDest);
-            aMapping[aItem.LnkPath] = "links/" + Path.GetFileName(aDest);
+            if (aItem.LnkPath != null)
+                CopyLnkFile(aItem.LnkPath, targetDir, aMapping);
         }
 
         return aMapping;
+
+    }
+
+
+    /// <summary>
+    /// Copies a single .lnk file into targetDir with collision-safe
+    /// suffix numbering (e.g. 'Foo.lnk' -> 'Foo_1.lnk' if 'Foo.lnk'
+    /// already exists in targetDir) and records the mapping under
+    /// the original source path. No-ops if the source file is missing.
+    /// </summary>
+    private static void CopyLnkFile(string srcPath, string targetDir,
+        Dictionary<string, string> mapping)
+    {
+
+        if (!File.Exists(srcPath))
+            return;
+
+        string aDestName = Path.GetFileName(srcPath);
+        string aDest = Path.Combine(targetDir, aDestName);
+
+        int aSuffix = 1;
+        while (File.Exists(aDest)) {
+            string aBase = Path.GetFileNameWithoutExtension(aDestName);
+            aDest = Path.Combine(targetDir, $"{aBase}_{aSuffix}{Path.GetExtension(aDestName)}");
+            aSuffix++;
+        }
+
+        File.Copy(srcPath, aDest);
+        mapping[srcPath] = "links/" + Path.GetFileName(aDest);
 
     }
 
