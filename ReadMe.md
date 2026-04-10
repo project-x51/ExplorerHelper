@@ -73,10 +73,10 @@ See [`src/Implementation.md`](src/Implementation.md) for the internals of pendin
 
 ```
 QuickAccess list                                   List Quick Access pinned items
+QuickAccess snapshot [path]                        Snapshot Quick Access to XML
 QuickAccess pin <path>                             Pin folder(s) to Quick Access
 QuickAccess pin -Paths <csv>                       Pin multiple folders (comma-separated)
 QuickAccess unpin <path>                           Unpin folder from Quick Access
-QuickAccess snapshot [path]                        Snapshot Quick Access to XML
 QuickAccess apply <snapshot.xml>                   Apply (reconcile) Quick Access from a snapshot
 ```
 
