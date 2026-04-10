@@ -91,6 +91,26 @@ has state `Added`. All previously-pinned items have state `Pinned`.
 `$OriginalTaskbarCount + 1`. `LayoutModification.xml` has been deleted (see
 T22).
 
+### T06b — Taskbar Apply UWP summary shows friendly name
+**Prerequisite:** Calculator (the UWP app) is NOT currently pinned. No
+`LayoutModification.xml` on disk.
+**Run:**
+```powershell
+Taskbar pin "UWP:Calculator" -Apply $false
+Taskbar apply
+```
+**Expect:** The apply summary contains a row like
+`  N. Added - Calculator` — the friendly name resolved via `Get-StartApps`,
+NOT the raw AUMID (`Microsoft.WindowsCalculator_8wekyb3d8bbwe!App`). The
+`Taskbar: Matched UWP:` line printed during pin still shows the AUMID —
+that is the resolver's own output and is independent.
+**Verify:** `Taskbar list` shows the new item at the end with display name
+`Calculator` and AUMID line starting with `Microsoft.WindowsCalculator`.
+**Cleanup:** UWP apps cannot be unpinned by name via `Taskbar unpin` (the
+current unpin only looks at `.lnk` files in the pinned folder). Restore
+the taskbar from the original snapshot instead:
+`Taskbar apply "$env:TEMP\eh_tests_original.xml"`.
+
 ### T07 — Taskbar Unpin single
 **Prerequisite:** Notepad is pinned (from T06).
 **Run:** `Taskbar unpin "Notepad"`

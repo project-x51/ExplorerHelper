@@ -439,7 +439,9 @@ public static class TaskbarCommands
 
     /// <summary>
     /// Reads pending pin entries from the LayoutModification.xml, extracting
-    /// DesktopApplicationLinkPath and AppUserModelID values.
+    /// DesktopApplicationLinkPath and AppUserModelID values. UWP entries
+    /// have their DisplayName resolved to the friendly app name via
+    /// Get-StartApps (single shell-out, amortized across all UWP items).
     /// </summary>
     private static List<PinnedList3.PinnedItem> ReadPendingPins()
     {
@@ -466,11 +468,20 @@ public static class TaskbarCommands
                 }
             }
 
-            // UWP apps
+            // UWP apps — collect first, then resolve friendly names in one shot
+            var aUwpAumids = new List<string>();
             foreach (XmlNode aNode in aDoc.SelectNodes("//t:UWA", aNs)!) {
                 string? aAumid = ((XmlElement)aNode).GetAttribute("AppUserModelID");
                 if (!string.IsNullOrEmpty(aAumid))
-                    aResults.Add(new PinnedList3.PinnedItem(aAumid, null, aAumid));
+                    aUwpAumids.Add(aAumid);
+            }
+
+            if (aUwpAumids.Count > 0) {
+                var aNameMap = ResolveUwpFriendlyNames(aUwpAumids);
+                foreach (string aAumid in aUwpAumids) {
+                    string aFriendly = aNameMap.TryGetValue(aAumid, out var aName) ? aName : aAumid;
+                    aResults.Add(new PinnedList3.PinnedItem(aFriendly, null, aAumid));
+                }
             }
         }
         catch {
@@ -478,6 +489,64 @@ public static class TaskbarCommands
         }
 
         return aResults;
+
+    }
+
+
+    /// <summary>
+    /// Resolves a list of UWP AppUserModelIDs to their friendly display
+    /// names via 'Get-StartApps'. Returns a dictionary keyed on AUMID.
+    /// Any AUMID not found in Get-StartApps is simply absent from the
+    /// returned map (callers should fall back to the raw AUMID).
+    /// </summary>
+    private static Dictionary<string, string> ResolveUwpFriendlyNames(List<string> aumids)
+    {
+
+        var aMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (aumids.Count == 0)
+            return aMap;
+
+        try
+        {
+            // Emit 'Name<TAB>AppID' pairs for every Start Menu app. We filter
+            // in C# rather than building a PS pipeline so we can pass an
+            // arbitrary number of AUMIDs without worrying about quoting.
+            string aScript = "Get-StartApps | ForEach-Object { \"$($_.Name)`t$($_.AppID)\" }";
+            string aEncoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(aScript));
+
+            var aProcess = new Process {
+                StartInfo = new ProcessStartInfo {
+                    FileName = "powershell",
+                    Arguments = $"-NoProfile -EncodedCommand {aEncoded}",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            aProcess.Start();
+            string aOutput = aProcess.StandardOutput.ReadToEnd();
+            aProcess.StandardError.ReadToEnd();
+            aProcess.WaitForExit(10000);
+
+            var aWanted = new HashSet<string>(aumids, StringComparer.OrdinalIgnoreCase);
+            foreach (string aLine in aOutput.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) {
+                int aTab = aLine.IndexOf('\t');
+                if (aTab <= 0)
+                    continue;
+                string aName = aLine.Substring(0, aTab);
+                string aAppId = aLine.Substring(aTab + 1);
+                if (aWanted.Contains(aAppId) && !aMap.ContainsKey(aAppId))
+                    aMap[aAppId] = aName;
+            }
+        }
+        catch
+        {
+            // Best effort — caller will fall back to the raw AUMID.
+        }
+
+        return aMap;
 
     }
 
