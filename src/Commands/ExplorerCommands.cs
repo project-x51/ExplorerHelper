@@ -46,10 +46,10 @@ public static class ExplorerCommands
         {
             KillExplorer();
             LaunchExplorer();
-            CleanupLayoutXml();
+            bool aCleanOk = CleanupLayoutXml();
 
             Console.WriteLine("Explorer: Restarted.");
-            return 0;
+            return aCleanOk ? 0 : 2;
         }
         catch (Exception x)
         {

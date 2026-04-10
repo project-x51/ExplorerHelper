@@ -287,17 +287,21 @@ as a restore point.
 Exit code non-zero.
 
 ### T22 — LayoutModification.xml is cleaned up after apply
-**Run:** Re-run T06 (pin Notepad, then apply) or use any other apply that
-triggers a restart. After the command finishes, check for the layout file
-AND the exit code.
+**Run:** Re-run T06 (pin Command Prompt, then apply) or use any other apply
+that triggers a restart. After the command finishes, check for the layout
+file AND the C# return value.
 **Verify:**
 - `%LocalAppData%\Microsoft\Windows\Shell\LayoutModification.xml` does NOT
   exist once the apply returns.
-- The command returned exit code 0 (not 2). If `CleanupLayoutXml` had
-  failed to delete the file after 5 retries, `Taskbar apply` would now
-  return 2 and stderr would contain
+- The C# method returned 0 (not 2). If `CleanupLayoutXml` had failed to
+  delete the file after 5 retries, `Taskbar apply`, `Taskbar pin` (which
+  applies), `Taskbar unpinall` (via Explorer.Restart path), and
+  `Explorer restart` would all now return 2 and stderr would contain
   `Explorer: WARNING: Could not delete LayoutModification.xml. Delete manually to avoid reapply on reboot.`
-**Cleanup:** `Taskbar unpin "Notepad"` to restore state.
+- Note: the PowerShell wrapper pipes return values to `Out-Null` so
+  `$LASTEXITCODE` is not directly observable. This is a known wrapper
+  limitation; the C# contract itself is correct.
+**Cleanup:** `Taskbar unpin "Command Prompt"` to restore state.
 
 ### T23 — QuickAccess List
 **Run:** `QuickAccess list`
