@@ -54,6 +54,17 @@ or more numbered entries. Each entry is two lines: `  <n>. <DisplayName>` then
 `     <lnkPath or AUMID>`.
 **Verify:** At least one entry is shown and the numbering starts at 1.
 
+### T02b — Taskbar List (empty)
+**Prerequisite:** Run `Taskbar unpinall` to clear the taskbar. This is
+destructive — T20 will restore from the original snapshot later. Only
+run this test if you're confident the teardown will recover the state.
+Alternatively, skip this test and rely on the transient empty-state
+assertion inside T19+T20.
+**Run:** `Taskbar list`
+**Expect:** Exactly the single line `Taskbar: No items pinned.`
+**Cleanup:** Immediately re-apply the original snapshot:
+`Taskbar apply "$TestDir\eh_tests_original.xml"`
+
 ### T03 — Taskbar Pin single (queue only, no apply)
 **Prerequisite:** `LayoutModification.xml` does not exist (delete it if it does).
 **Run:** `Taskbar pin "Command Prompt" -Apply $false`
@@ -72,6 +83,19 @@ followed by `Taskbar: ERROR: No apps could be resolved.`
 Under the old substring-fallback behaviour this would have silently matched
 `Notepad++.lnk` (or any other `*Notepad*.lnk` installed on the machine).
 **Verify:** `LayoutModification.xml` does not exist (no queue entry was made).
+
+### T03c — Taskbar Pin with explicit .lnk path
+**Prerequisite:** `LayoutModification.xml` does not exist. Find the
+Command Prompt shortcut path with
+`$cp = Get-ChildItem "$env:ProgramData\Microsoft\Windows\Start Menu\Programs" -Recurse -Filter 'Command Prompt.lnk' | Select -First 1 -ExpandProperty FullName`
+**Run:** `Taskbar pin $cp -Apply $false`
+**Expect:** Output contains `Taskbar: Queued pin for Command Prompt`
+(the display name comes from the filename without extension).
+**Verify:** `LayoutModification.xml` contains a `<taskbar:DesktopApp>`
+entry whose `DesktopApplicationLinkPath` is the exact path that was
+passed in. This exercises the `.lnk`-fast-path branch of
+`ResolveLnkPath` which skips Start Menu enumeration entirely.
+**Cleanup:** Delete `LayoutModification.xml` before T04.
 
 ### T04 — Taskbar Pin multiple via -Apps (queue only)
 **Prerequisite:** `LayoutModification.xml` does not exist.
