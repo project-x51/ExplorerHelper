@@ -101,21 +101,32 @@ public static class ExplorerCommands
 
     /// <summary>
     /// Kills all explorer.exe processes and waits for them to exit.
+    /// Re-snapshots up to 3 times to catch any explorer.exe that
+    /// Windows auto-restarted between the initial snapshot and the
+    /// WaitForExit (shell auto-restart is on by default).
     /// </summary>
     private static void KillExplorer()
     {
 
-        Process[] aProcesses = Process.GetProcessesByName("explorer");
-        if (aProcesses.Length == 0)
-            return;
+        const int MAX_PASSES = 3;
 
-        foreach (Process aProc in aProcesses) {
-            try { aProc.Kill(); } catch { /* already exited */ }
-        }
+        for (int aPass = 0; aPass < MAX_PASSES; aPass++) {
+            Process[] aProcesses = Process.GetProcessesByName("explorer");
+            if (aProcesses.Length == 0)
+                return;
 
-        foreach (Process aProc in aProcesses) {
-            try { aProc.WaitForExit(EXIT_TIMEOUT_MS); } catch { }
-            finally { aProc.Dispose(); }
+            foreach (Process aProc in aProcesses) {
+                try { aProc.Kill(); } catch { /* already exited */ }
+            }
+
+            foreach (Process aProc in aProcesses) {
+                try { aProc.WaitForExit(EXIT_TIMEOUT_MS); } catch { }
+                finally { aProc.Dispose(); }
+            }
+
+            // Give Windows shell auto-restart a moment to fire (if it's
+            // going to) so the next snapshot catches it.
+            Thread.Sleep(200);
         }
 
         Thread.Sleep(RELAUNCH_DELAY_MS);
