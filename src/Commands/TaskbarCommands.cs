@@ -334,8 +334,17 @@ public static class TaskbarCommands
                 // Copy new .lnk to temp links dir using the shared helper
                 // so filename collisions get a suffix rather than silently
                 // mapping the new pin to an unrelated previously-copied file.
-                if (aPending.LnkPath != null)
+                // If the source .lnk has disappeared between queue-time and
+                // apply-time, warn and skip — adding it to the merged list
+                // would produce a snapshot entry with no resolvable path
+                // that silently drops at apply-to-Explorer time.
+                if (aPending.LnkPath != null) {
+                    if (!File.Exists(aPending.LnkPath)) {
+                        Console.Error.WriteLine($"Taskbar: WARNING: Source shortcut for queued pin '{aPending.DisplayName}' no longer exists at '{aPending.LnkPath}', skipping.");
+                        continue;
+                    }
                     CopyLnkFile(aPending.LnkPath, aLinksDir, aTempPaths);
+                }
 
                 aMerged.Add(aPending);
                 aItemStates[aPending.DisplayName] = "Added";
@@ -501,8 +510,11 @@ public static class TaskbarCommands
                 }
             }
         }
-        catch {
-            // Malformed XML — treat as no pending pins
+        catch (Exception x) {
+            // Malformed LayoutModification.xml — log so the user isn't
+            // surprised when their queued work appears to have vanished,
+            // then return empty so apply can proceed.
+            Console.Error.WriteLine($"Taskbar: WARNING: Could not parse LayoutModification.xml ({x.Message}). Pending pins will not be applied.");
         }
 
         return aResults;
