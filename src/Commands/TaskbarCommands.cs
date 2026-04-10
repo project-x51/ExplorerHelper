@@ -183,7 +183,7 @@ public static class TaskbarCommands
 
         // Restore from snapshot file
         if (!string.IsNullOrEmpty(xmlPath))
-            return ApplyFromFile(xmlPath);
+            return ApplyFromFile(xmlPath, order);
 
         // Merge pending pins + optional reorder
         return ApplyPending(order);
@@ -193,8 +193,10 @@ public static class TaskbarCommands
 
     /// <summary>
     /// Restores the taskbar from a snapshot or LayoutModification XML file.
+    /// If <paramref name="order"/> is provided and the file is a snapshot,
+    /// the snapshot items are reordered before being applied.
     /// </summary>
-    private static int ApplyFromFile(string xmlPath)
+    private static int ApplyFromFile(string xmlPath, string? order = null)
     {
 
         try
@@ -208,9 +210,13 @@ public static class TaskbarCommands
             string aLayoutXml;
 
             if (aXmlContent.Contains("<TaskbarSnapshot")) {
-                aLayoutXml = ConvertSnapshotToLayout(xmlPath);
+                aLayoutXml = ConvertSnapshotToLayout(xmlPath, order);
             }
             else if (aXmlContent.Contains("<LayoutModificationTemplate")) {
+                if (!string.IsNullOrEmpty(order)) {
+                    Console.Error.WriteLine("Taskbar: ERROR: -Order cannot be combined with a LayoutModificationTemplate file (only TaskbarSnapshot files can be reordered).");
+                    return 2;
+                }
                 aLayoutXml = aXmlContent;
             }
             else {
@@ -222,6 +228,16 @@ public static class TaskbarCommands
             string aCopyPath = Path.Combine(aDir,
                 $"applied_layout_{DateTime.Now:yyyyMMdd_HHmmss}.xml");
             File.WriteAllText(aCopyPath, aLayoutXml, Encoding.UTF8);
+
+            // Clear the current taskbar before applying. Windows Explorer
+            // does not reliably re-order pins that are already pinned when
+            // it re-reads LayoutModification.xml on restart — the old items
+            // must be unpinned first so Explorer pins fresh in the new order.
+            using (var aPinnedList = new PinnedList3()) {
+                var aCurrent = aPinnedList.GetOrderedItemsWithPidls();
+                if (aCurrent.Count > 0)
+                    aPinnedList.UnpinAll(aCurrent);
+            }
 
             ApplyLayoutXml(aLayoutXml);
             Console.WriteLine("Taskbar: Restored from snapshot.");
@@ -767,9 +783,11 @@ public static class TaskbarCommands
 
     /// <summary>
     /// Converts a TaskbarSnapshot XML to a LayoutModification.xml with
-    /// PinListPlacement="Replace".
+    /// PinListPlacement="Replace". If <paramref name="order"/> is provided,
+    /// the snapshot items are reordered before being emitted using the
+    /// same matching cascade as ApplyPending (exact → _N suffix → substring).
     /// </summary>
-    private static string ConvertSnapshotToLayout(string snapshotPath)
+    private static string ConvertSnapshotToLayout(string snapshotPath, string? order = null)
     {
 
         var aDoc = new XmlDocument();
@@ -777,10 +795,12 @@ public static class TaskbarCommands
 
         string aBaseDir = Path.GetDirectoryName(Path.GetFullPath(snapshotPath)) ?? ".";
 
-        var aPinEntries = new StringBuilder();
+        // First pass: parse each snapshot item into (displayName, pinEntryXml)
+        var aItems = new List<(string DisplayName, string PinEntry)>();
         foreach (XmlNode aNode in aDoc.DocumentElement!.SelectNodes("Item")!) {
             var aElem = (XmlElement)aNode;
             string aType = aElem.GetAttribute("type");
+            string aDisplayName = aElem.GetAttribute("displayName");
 
             if (aType == "Desktop") {
                 string? aTempPath = aElem.GetAttribute("path");
@@ -796,14 +816,49 @@ public static class TaskbarCommands
                     aResolvedPath = aLnkPath;
 
                 if (aResolvedPath != null)
-                    aPinEntries.AppendLine($"        <taskbar:DesktopApp DesktopApplicationLinkPath=\"{aResolvedPath}\"/>");
+                    aItems.Add((aDisplayName, $"        <taskbar:DesktopApp DesktopApplicationLinkPath=\"{aResolvedPath}\"/>"));
             }
             else if (aType == "UWP") {
                 string? aAumid = aElem.GetAttribute("appUserModelId");
                 if (!string.IsNullOrEmpty(aAumid))
-                    aPinEntries.AppendLine($"        <taskbar:UWA AppUserModelID=\"{aAumid}\"/>");
+                    aItems.Add((aDisplayName, $"        <taskbar:UWA AppUserModelID=\"{aAumid}\"/>"));
             }
         }
+
+        // Apply ordering if specified
+        if (!string.IsNullOrEmpty(order)) {
+            string[] aOrderNames = order!
+                .Split(new[] { ',', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(n => n.Trim()).Where(n => n.Length > 0).ToArray();
+
+            var aOrdered = new List<(string DisplayName, string PinEntry)>();
+            var aRemaining = new List<(string DisplayName, string PinEntry)>(aItems);
+
+            foreach (string aName in aOrderNames) {
+                // exact → _N suffix → substring (same cascade as ApplyPending)
+                int aIdx = aRemaining.FindIndex(i =>
+                    i.DisplayName.Equals(aName, StringComparison.OrdinalIgnoreCase));
+                if (aIdx < 0)
+                    aIdx = aRemaining.FindIndex(i =>
+                        i.DisplayName.StartsWith(aName, StringComparison.OrdinalIgnoreCase) &&
+                        i.DisplayName.Length > aName.Length && i.DisplayName[aName.Length] == '_');
+                if (aIdx < 0)
+                    aIdx = aRemaining.FindIndex(i =>
+                        i.DisplayName.IndexOf(aName, StringComparison.OrdinalIgnoreCase) >= 0);
+
+                if (aIdx >= 0) {
+                    aOrdered.Add(aRemaining[aIdx]);
+                    aRemaining.RemoveAt(aIdx);
+                }
+            }
+
+            aOrdered.AddRange(aRemaining);
+            aItems = aOrdered;
+        }
+
+        var aPinEntries = new StringBuilder();
+        foreach (var aItem in aItems)
+            aPinEntries.AppendLine(aItem.PinEntry);
 
         return $"""
             <?xml version="1.0" encoding="utf-8"?>

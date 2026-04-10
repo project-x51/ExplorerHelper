@@ -159,6 +159,24 @@ not change.
 **Expect:** Exactly `Taskbar: No changes needed.`
 **Verify:** No Explorer restart (Explorer PID unchanged from after T11).
 
+### T12b — Taskbar Apply from snapshot with -Order
+**Prerequisite:** A taskbar snapshot XML exists at
+`"$env:TEMP\eh_tests_original.xml"` (from Setup). The taskbar currently has
+`Microsoft Edge` in position 1 and `Microsoft Store` in position 2.
+**Run:** `Taskbar apply "$env:TEMP\eh_tests_original.xml" -Order "Microsoft Store, Microsoft Edge"`
+**Expect:** Output contains `Taskbar: Restored from snapshot.` Explorer restarts.
+**Verify:** `Taskbar list` shows `Microsoft Store` in position 1 and
+`Microsoft Edge` in position 2 (the reverse of T11 — the snapshot itself had
+Edge first, but `-Order` reordered its items before the restore).
+
+### T12c — Taskbar Apply from LayoutModificationTemplate with -Order (rejected)
+**Prerequisite:** Any `LayoutModificationTemplate`-format XML file (e.g. one of
+the `applied_layout_*.xml` files a prior apply created alongside the snapshot).
+**Run:** `Taskbar apply "<that file>" -Order "Microsoft Edge"`
+**Expect:** Stderr contains
+`Taskbar: ERROR: -Order cannot be combined with a LayoutModificationTemplate file (only TaskbarSnapshot files can be reordered).`
+**Verify:** Non-zero return. No Explorer restart.
+
 ### T13 — Taskbar Pin idempotent (already-pinned app)
 **Prerequisite:** `Microsoft Edge` is pinned (verified in T11).
 **Run:** `Taskbar pin "Microsoft Edge"` (uses default `-Apply $true`)
