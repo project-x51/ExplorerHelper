@@ -103,6 +103,31 @@ T22).
 **Expect:** Output contains `Taskbar: 'Notepad' is not pinned.`
 **Verify:** No error, exit code 0. Item count unchanged.
 
+### T08b — Taskbar Unpin exact-match (no substring fallback)
+**Prerequisite:** Pin both `Windows PowerShell` and `Windows PowerShell ISE`:
+```powershell
+Taskbar pin -Apps "Windows PowerShell, Windows PowerShell ISE" -Apply $false
+Taskbar apply
+```
+**Run:** `Taskbar unpin "Windows PowerShell"`
+**Expect:** Output contains `Taskbar: Unpinned Windows PowerShell` exactly once.
+**Verify:** `Taskbar list` still shows `Windows PowerShell ISE` (the substring
+match from the pre-fix behaviour would have wrongly unpinned it). Item count
+decreased by 1.
+
+### T08c — Taskbar Unpin glob wildcard
+**Prerequisite:** `Windows PowerShell ISE` is still pinned (from T08b). Pin
+`Windows PowerShell` again so both are present:
+```powershell
+Taskbar pin "Windows PowerShell" -Apply $false
+Taskbar apply
+```
+**Run:** `Taskbar unpin "Windows Power*"`
+**Expect:** Output contains `Taskbar: Unpinned Windows PowerShell` AND
+`Taskbar: Unpinned Windows PowerShell ISE` (both match the glob).
+**Verify:** `Taskbar list` shows neither. Item count decreased by 2 from the
+start of this test.
+
 ### T09 — Taskbar Pin nonexistent desktop app
 **Run:** `Taskbar pin "ZzzNonexistentAppXyz" -Apply $false`
 **Expect:** Stderr contains

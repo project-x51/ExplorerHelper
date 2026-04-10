@@ -545,35 +545,38 @@ public static class TaskbarCommands
         using var aPinnedList = new PinnedList3();
 
         foreach (string aName in aNames) {
-            string? aLnkPath = FindPinnedShortcut(aName);
-            if (aLnkPath == null) {
+            var aLnkPaths = FindPinnedShortcuts(aName);
+            if (aLnkPaths.Count == 0) {
                 Console.WriteLine($"Taskbar: '{aName}' is not pinned.");
                 continue;
             }
 
-            IntPtr aPidl = IntPtr.Zero;
-            try
-            {
-                int aHr = NativeMethods.SHParseDisplayName(aLnkPath, IntPtr.Zero, out aPidl, 0, out _);
-                if (aHr != 0 || aPidl == IntPtr.Zero) {
-                    Console.Error.WriteLine($"Taskbar: ERROR: Failed to resolve PIDL for '{aName}'");
-                    aResult = 2;
-                    continue;
-                }
+            foreach (string aLnkPath in aLnkPaths) {
+                string aDisplay = Path.GetFileNameWithoutExtension(aLnkPath);
+                IntPtr aPidl = IntPtr.Zero;
+                try
+                {
+                    int aHr = NativeMethods.SHParseDisplayName(aLnkPath, IntPtr.Zero, out aPidl, 0, out _);
+                    if (aHr != 0 || aPidl == IntPtr.Zero) {
+                        Console.Error.WriteLine($"Taskbar: ERROR: Failed to resolve PIDL for '{aDisplay}'");
+                        aResult = 2;
+                        continue;
+                    }
 
-                aHr = aPinnedList.Unpin(aPidl);
-                if (aHr != 0) {
-                    Console.Error.WriteLine($"Taskbar: ERROR: Unpin failed for '{aName}'");
-                    aResult = 2;
-                    continue;
-                }
+                    aHr = aPinnedList.Unpin(aPidl);
+                    if (aHr != 0) {
+                        Console.Error.WriteLine($"Taskbar: ERROR: Unpin failed for '{aDisplay}'");
+                        aResult = 2;
+                        continue;
+                    }
 
-                Console.WriteLine($"Taskbar: Unpinned {aName}");
-            }
-            finally
-            {
-                if (aPidl != IntPtr.Zero)
-                    NativeMethods.CoTaskMemFree(aPidl);
+                    Console.WriteLine($"Taskbar: Unpinned {aDisplay}");
+                }
+                finally
+                {
+                    if (aPidl != IntPtr.Zero)
+                        NativeMethods.CoTaskMemFree(aPidl);
+                }
             }
         }
 
@@ -878,23 +881,47 @@ public static class TaskbarCommands
 
 
     /// <summary>
-    /// Finds a .lnk shortcut in the pinned taskbar folder.
+    /// Finds .lnk shortcuts in the pinned taskbar folder matching the
+    /// given name. If the name contains '*' or '?', it is treated as a
+    /// glob and every matching shortcut is returned. Otherwise an exact
+    /// (case-insensitive) filename match is used and at most one path
+    /// is returned.
     /// </summary>
-    private static string? FindPinnedShortcut(string nameOrPath)
+    private static List<string> FindPinnedShortcuts(string nameOrPath)
     {
 
+        var aResults = new List<string>();
+
         if (!Directory.Exists(TASKBAR_PINNED_PATH))
-            return null;
+            return aResults;
 
         string aSearchName = Path.GetFileNameWithoutExtension(nameOrPath);
+        bool aIsGlob = aSearchName.IndexOfAny(new[] { '*', '?' }) >= 0;
 
-        foreach (string aLnk in Directory.EnumerateFiles(TASKBAR_PINNED_PATH, "*.lnk")) {
-            string aLnkName = Path.GetFileNameWithoutExtension(aLnk);
-            if (aLnkName.IndexOf(aSearchName, StringComparison.OrdinalIgnoreCase) >= 0)
-                return aLnk;
+        if (aIsGlob) {
+            // Convert glob to regex: escape everything, then re-expand * and ?
+            string aPattern = "^" + Regex.Escape(aSearchName)
+                .Replace("\\*", ".*")
+                .Replace("\\?", ".") + "$";
+            var aRegex = new Regex(aPattern, RegexOptions.IgnoreCase);
+
+            foreach (string aLnk in Directory.EnumerateFiles(TASKBAR_PINNED_PATH, "*.lnk")) {
+                string aLnkName = Path.GetFileNameWithoutExtension(aLnk);
+                if (aRegex.IsMatch(aLnkName))
+                    aResults.Add(aLnk);
+            }
+        }
+        else {
+            foreach (string aLnk in Directory.EnumerateFiles(TASKBAR_PINNED_PATH, "*.lnk")) {
+                string aLnkName = Path.GetFileNameWithoutExtension(aLnk);
+                if (aLnkName.Equals(aSearchName, StringComparison.OrdinalIgnoreCase)) {
+                    aResults.Add(aLnk);
+                    break;
+                }
+            }
         }
 
-        return null;
+        return aResults;
 
     }
 
