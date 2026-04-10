@@ -63,8 +63,10 @@ public static class ExplorerCommands
     /// <summary>
     /// Restarts Explorer and waits for pinned items to appear before
     /// cleaning up the layout XML. Used by taskbar apply operations.
+    /// Returns true if the cleanup succeeded (or the file was already
+    /// gone), false if the XML could not be deleted after 5 retries.
     /// </summary>
-    public static void RestartAndWaitForPins()
+    public static bool RestartAndWaitForPins()
     {
 
         KillExplorer();
@@ -92,7 +94,7 @@ public static class ExplorerCommands
         // much longer to come back.
         Thread.Sleep(1000);
 
-        CleanupLayoutXml();
+        return CleanupLayoutXml();
 
     }
 
@@ -138,24 +140,30 @@ public static class ExplorerCommands
 
     /// <summary>
     /// Deletes the LayoutModification.xml if it exists. Retries up to
-    /// 5 times in case Explorer still has the file locked.
+    /// 5 times in case Explorer still has the file locked. Returns true
+    /// on success (including the file not existing), false if the file
+    /// could not be deleted after 5 retries.
     /// </summary>
-    public static void CleanupLayoutXml()
+    public static bool CleanupLayoutXml()
     {
 
         if (!File.Exists(LAYOUT_MOD_PATH))
-            return;
+            return true;
 
         for (int i = 0; i < 5; i++) {
             try {
                 File.Delete(LAYOUT_MOD_PATH);
-                return;
+                return true;
             }
             catch { Thread.Sleep(1000); }
         }
 
-        if (File.Exists(LAYOUT_MOD_PATH))
+        if (File.Exists(LAYOUT_MOD_PATH)) {
             Console.Error.WriteLine("Explorer: WARNING: Could not delete LayoutModification.xml. Delete manually to avoid reapply on reboot.");
+            return false;
+        }
+
+        return true;
 
     }
 }

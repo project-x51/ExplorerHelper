@@ -239,9 +239,9 @@ public static class TaskbarCommands
                     aPinnedList.UnpinAll(aCurrent);
             }
 
-            ApplyLayoutXml(aLayoutXml);
+            bool aCleanOk = ApplyLayoutXml(aLayoutXml);
             Console.WriteLine("Taskbar: Restored from snapshot.");
-            return 0;
+            return aCleanOk ? 0 : 2;
         }
         catch (Exception x)
         {
@@ -416,7 +416,7 @@ public static class TaskbarCommands
 
             // Unpin all and apply
             aPinnedList.UnpinAll(aCurrentItems);
-            ApplyFromFile(aSnapshotPath);
+            int aApplyResult = ApplyFromFile(aSnapshotPath);
 
             // Show consolidated result
             Console.WriteLine($"Taskbar:");
@@ -426,7 +426,7 @@ public static class TaskbarCommands
                 Console.WriteLine($"  {i + 1}. {aState} - {aName}");
             }
 
-            return 0;
+            return aApplyResult;
         }
         catch (Exception x)
         {
@@ -883,8 +883,11 @@ public static class TaskbarCommands
     /// <summary>
     /// Writes a LayoutModification.xml, clears the layout cache,
     /// restarts Explorer, waits for pins to appear, then cleans up.
+    /// Returns true on success, false if the final cleanup of
+    /// LayoutModification.xml failed (stale XML will be reapplied on
+    /// next login).
     /// </summary>
-    private static void ApplyLayoutXml(string xml)
+    private static bool ApplyLayoutXml(string xml)
     {
 
         File.WriteAllText(LAYOUT_MOD_PATH, xml, Encoding.UTF8);
@@ -892,7 +895,7 @@ public static class TaskbarCommands
         if (Directory.Exists(LAYOUT_CACHE_PATH))
             Directory.Delete(LAYOUT_CACHE_PATH, recursive: true);
 
-        ExplorerCommands.RestartAndWaitForPins();
+        return ExplorerCommands.RestartAndWaitForPins();
 
     }
 

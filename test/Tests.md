@@ -268,9 +268,15 @@ Exit code non-zero.
 
 ### T22 — LayoutModification.xml is cleaned up after apply
 **Run:** Re-run T06 (pin Notepad, then apply) or use any other apply that
-triggers a restart. After the command finishes, check for the layout file.
-**Verify:** `%LocalAppData%\Microsoft\Windows\Shell\LayoutModification.xml`
-does NOT exist once the apply returns.
+triggers a restart. After the command finishes, check for the layout file
+AND the exit code.
+**Verify:**
+- `%LocalAppData%\Microsoft\Windows\Shell\LayoutModification.xml` does NOT
+  exist once the apply returns.
+- The command returned exit code 0 (not 2). If `CleanupLayoutXml` had
+  failed to delete the file after 5 retries, `Taskbar apply` would now
+  return 2 and stderr would contain
+  `Explorer: WARNING: Could not delete LayoutModification.xml. Delete manually to avoid reapply on reboot.`
 **Cleanup:** `Taskbar unpin "Notepad"` to restore state.
 
 ### T23 — QuickAccess List
