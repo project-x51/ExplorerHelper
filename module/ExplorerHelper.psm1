@@ -58,11 +58,16 @@ function Taskbar {
             [ExplorerHelper.Commands.TaskbarCommands]::Snapshot($Target) | Out-Null
         }
         "apply" {
-            # Target can be: a file path, "true", "false", or empty
+            # Target can be: a file path, "true", "false", or empty.
+            # - "false"             -> sentinel, print skipped and return
+            # - "" or "true"        -> apply pending pins from LayoutModification.xml
+            # - anything else       -> treat as a snapshot path and forward to C#
+            #                          so missing files surface as 'File not found'
+            #                          rather than silently applying-pending.
             if ($Target -eq "false") {
                 Write-Host "Taskbar: Apply skipped."
             }
-            elseif ($Target -and ($Target -ne "true") -and (Test-Path $Target -ErrorAction SilentlyContinue)) {
+            elseif ($Target -and ($Target -ne "true")) {
                 [ExplorerHelper.Commands.TaskbarCommands]::Apply($Target, $Order) | Out-Null
             }
             else {
