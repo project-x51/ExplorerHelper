@@ -24,13 +24,21 @@ prints, including the prefix.
 2. Verify the pending layout XML is not present. If
    `$env:LOCALAPPDATA\Microsoft\Windows\Shell\LayoutModification.xml` exists,
    delete it so that T05 starts from a clean state.
-3. Create `D:\Temp` if it does not already exist (used by QuickAccess tests).
+3. Create a fresh working directory for the test run and record it as
+   `$TestDir`:
+   ```powershell
+   $TestDir = Join-Path $env:TEMP ("ExplorerHelper_Tests_" + (Get-Date -Format 'yyyyMMdd_HHmmss'))
+   New-Item -ItemType Directory -Path $TestDir | Out-Null
+   ```
+   Every test file created below lives inside `$TestDir` so the suite
+   leaves no trace outside `%TEMP%` on any machine. Teardown deletes the
+   whole folder.
 4. Take an original snapshot of the taskbar as the restore point:
-   `Taskbar snapshot "D:\Temp\eh_tests_original.xml"`
+   `Taskbar snapshot "$TestDir\eh_tests_original.xml"`
    Record the reported **Items** count as `$OriginalTaskbarCount` and the first
    3 display names from `Taskbar list` as `$OriginalTop3` for later verification.
 5. Take an original snapshot of Quick Access as the restore point:
-   `QuickAccess snapshot "D:\Temp\eh_tests_qa_original.xml"`
+   `QuickAccess snapshot "$TestDir\eh_tests_qa_original.xml"`
    Record the reported **Items** count as `$OriginalQACount`.
 
 ## Tests
@@ -195,11 +203,11 @@ they were not already in that order.
 
 ### T12b — Taskbar Apply from snapshot with -Order
 **Prerequisite:** A taskbar snapshot XML exists at
-`"D:\Temp\eh_tests_original.xml"` (from Setup). The taskbar currently has
+`"$TestDir\eh_tests_original.xml"` (from Setup). The taskbar currently has
 `Microsoft Edge` in position 1 and `Command Prompt` in position 2 (from T11).
 Note: `eh_tests_original.xml` does NOT contain `Command Prompt` since it was
 taken in Setup before T11 pinned it.
-**Run:** `Taskbar apply "D:\Temp\eh_tests_original.xml" -Order "Microsoft Edge"`
+**Run:** `Taskbar apply "$TestDir\eh_tests_original.xml" -Order "Microsoft Edge"`
 **Expect:** Output contains `Taskbar: Restored from snapshot.` Explorer
 restarts. Because the snapshot is the original (no Command Prompt), the
 `-Order` list just hoists Edge to position 1.
@@ -269,23 +277,24 @@ with `count="<N>"`, and has N `<Item` elements. A `links/` sibling folder
 exists next to the XML and contains M `.lnk` files.
 
 ### T17 — Taskbar Snapshot (explicit file path)
-**Run:** `Taskbar snapshot "D:\Temp\eh_tests_explicit.xml"`
+**Run:** `Taskbar snapshot "$TestDir\eh_tests_explicit.xml"`
 **Expect:** Output includes
-`Taskbar: Snapshot saved to D:\Temp\eh_tests_explicit.xml`.
-**Verify:** `D:\Temp\eh_tests_explicit.xml` exists and is valid XML with a
-`<TaskbarSnapshot` root. A `D:\Temp\links\` folder exists containing `.lnk`
-files copied from the current taskbar.
+`Taskbar: Snapshot saved to <TestDir>\eh_tests_explicit.xml` (with the
+real path substituted).
+**Verify:** `$TestDir\eh_tests_explicit.xml` exists and is valid XML
+with a `<TaskbarSnapshot` root. A `$TestDir\links\` folder exists
+containing `.lnk` files copied from the current taskbar.
 
 ### T18 — Taskbar Snapshot (explicit directory path)
-**Prerequisite:** `D:\Temp\eh_tests_snap_dir` exists (create it if not).
-**Run:** `Taskbar snapshot "D:\Temp\eh_tests_snap_dir"`
+**Prerequisite:** `$TestDir\eh_tests_snap_dir` exists (create it if not).
+**Run:** `Taskbar snapshot "$TestDir\eh_tests_snap_dir"`
 **Expect:** Output includes `Taskbar: Snapshot saved to
-D:\Temp\eh_tests_snap_dir\snapshot_<yyyyMMdd_HHmmss>.xml`.
+<TestDir>\eh_tests_snap_dir\snapshot_<yyyyMMdd_HHmmss>.xml`.
 **Verify:** A new XML file of that form exists in the directory.
 
 ### T19 — Taskbar UnpinAll
-**Prerequisite:** T17 has been run, so `D:\Temp\eh_tests_explicit.xml` exists
-as a restore point.
+**Prerequisite:** T17 has been run, so `$TestDir\eh_tests_explicit.xml`
+exists as a restore point.
 **Run:** `Taskbar unpinall`
 **Expect:** Output includes `Taskbar: Unpinning <N> items...` then
 `Taskbar: Unpinned <N> items.` where N matches `$OriginalTaskbarCount`.
@@ -293,16 +302,16 @@ as a restore point.
 
 ### T20 — Taskbar Apply from snapshot file
 **Prerequisite:** Taskbar is empty (from T19). Snapshot file from T17 exists.
-**Run:** `Taskbar apply "D:\Temp\eh_tests_explicit.xml"`
+**Run:** `Taskbar apply "$TestDir\eh_tests_explicit.xml"`
 **Expect:** Output contains `Taskbar: Restored from snapshot.`
 **Verify:** `Taskbar list` shows items again. Count equals
 `$OriginalTaskbarCount`. The first three display names match `$OriginalTop3`
 (order preserved from the snapshot).
 
 ### T21 — Taskbar Apply missing snapshot file
-**Run:** `Taskbar apply "D:\Temp\eh_tests_does_not_exist.xml"`
+**Run:** `Taskbar apply "$TestDir\eh_tests_does_not_exist.xml"`
 **Expect:** Stderr contains
-`Taskbar: ERROR: File not found: D:\Temp\eh_tests_does_not_exist.xml`.
+`Taskbar: ERROR: File not found: <TestDir>\eh_tests_does_not_exist.xml`.
 Exit code non-zero.
 
 ### T22 — LayoutModification.xml is cleaned up after apply
@@ -330,30 +339,32 @@ spaces). On a fresh Windows 11 there are usually default items like
 `C:\Users\<user>\Desktop` and `C:\Users\<user>\Downloads`.
 
 ### T24 — QuickAccess Pin new folder
-**Prerequisite:** `D:\Temp` exists and is NOT currently pinned. If it is
-pinned, run `QuickAccess unpin "D:\Temp"` first.
-**Run:** `QuickAccess pin "D:\Temp" -RestartExplorer $false`
-**Expect:** Output contains `QuickAccess: Pinning D:\Temp` followed by
-`QuickAccess: Pins applied. Restart Explorer to refresh.` (no restart because
-`-RestartExplorer $false`).
-**Verify:** `QuickAccess list` now contains `D:\Temp`.
+**Prerequisite:** `$TestDir` (the test working directory from Setup) is
+NOT currently pinned — it has a fresh timestamp name so it shouldn't
+be. If `QuickAccess list` shows it, run `QuickAccess unpin "$TestDir"`
+first.
+**Run:** `QuickAccess pin "$TestDir" -RestartExplorer $false`
+**Expect:** Output contains `QuickAccess: Pinning <TestDir>` followed by
+`QuickAccess: Pins applied. Restart Explorer to refresh.` (no restart
+because `-RestartExplorer $false`).
+**Verify:** `QuickAccess list` now contains `$TestDir`.
 
 ### T25 — QuickAccess Pin idempotent
-**Prerequisite:** `D:\Temp` is pinned (from T24).
-**Run:** `QuickAccess pin "D:\Temp" -RestartExplorer $false`
-**Expect:** Output contains `QuickAccess: Already pinned D:\Temp` followed by
-`QuickAccess: No changes needed.`
+**Prerequisite:** `$TestDir` is pinned (from T24).
+**Run:** `QuickAccess pin "$TestDir" -RestartExplorer $false`
+**Expect:** Output contains `QuickAccess: Already pinned <TestDir>`
+followed by `QuickAccess: No changes needed.`
 **Verify:** QuickAccess item count is unchanged.
 
 ### T26 — QuickAccess Unpin
-**Prerequisite:** `D:\Temp` is pinned.
-**Run:** `QuickAccess unpin "D:\Temp"`
-**Expect:** Output contains `QuickAccess: Unpinned D:\Temp`.
-**Verify:** `QuickAccess list` no longer contains `D:\Temp`.
+**Prerequisite:** `$TestDir` is pinned.
+**Run:** `QuickAccess unpin "$TestDir"`
+**Expect:** Output contains `QuickAccess: Unpinned <TestDir>`.
+**Verify:** `QuickAccess list` no longer contains `$TestDir`.
 
 ### T27 — QuickAccess Unpin not-pinned
-**Run:** `QuickAccess unpin "D:\Temp"` (immediately after T26)
-**Expect:** Output contains `QuickAccess: 'D:\Temp' is not pinned.`
+**Run:** `QuickAccess unpin "$TestDir"` (immediately after T26)
+**Expect:** Output contains `QuickAccess: '<TestDir>' is not pinned.`
 
 ### T27b — QuickAccess Pin dedupes duplicate paths
 **Prerequisite:** `C:\Windows` is NOT currently pinned.
@@ -366,28 +377,28 @@ pinned, run `QuickAccess unpin "D:\Temp"` first.
 **Cleanup:** `QuickAccess unpin "C:\Windows"`
 
 ### T28 — QuickAccess Snapshot
-**Run:** `QuickAccess snapshot "D:\Temp\eh_tests_qa.xml"`
+**Run:** `QuickAccess snapshot "$TestDir\eh_tests_qa.xml"`
 **Expect:** Output contains `QuickAccess: Snapshot saved to
-D:\Temp\eh_tests_qa.xml` followed by `  Items: <N>`.
-**Verify:** `D:\Temp\eh_tests_qa.xml` exists and has a `<QuickAccessSnapshot`
-root with `<Item path="..."/>` elements.
+<TestDir>\eh_tests_qa.xml` followed by `  Items: <N>`.
+**Verify:** `$TestDir\eh_tests_qa.xml` exists and has a
+`<QuickAccessSnapshot` root with `<Item path="..."/>` elements.
 
 ### T29 — QuickAccess Apply (restore from snapshot)
-**Prerequisite:** `D:\Temp\eh_tests_qa.xml` from T28 exists and does NOT
-contain `D:\Temp` (T26 unpinned it before T28 was taken).
+**Prerequisite:** `$TestDir\eh_tests_qa.xml` from T28 exists and does NOT
+contain `$TestDir` (T26 unpinned it before T28 was taken).
 **Action:** First make the QA state differ from the snapshot by pinning
-`D:\Temp` again: `QuickAccess pin "D:\Temp" -RestartExplorer $false`.
-**Run:** `QuickAccess apply "D:\Temp\eh_tests_qa.xml" -RestartExplorer $false`
-**Expect:** Output shows `QuickAccess: Unpinning D:\Temp` (because it's in the
-current state but not in the snapshot), then `QuickAccess: Changes applied.
-Restart Explorer to refresh.`
-**Verify:** `QuickAccess list` matches the pre-T29 state (D:\Temp removed
-again). Item count equals `$OriginalQACount`.
+`$TestDir` again: `QuickAccess pin "$TestDir" -RestartExplorer $false`.
+**Run:** `QuickAccess apply "$TestDir\eh_tests_qa.xml" -RestartExplorer $false`
+**Expect:** Output shows `QuickAccess: Unpinning <TestDir>` (because it's
+in the current state but not in the snapshot), then
+`QuickAccess: Changes applied. Restart Explorer to refresh.`
+**Verify:** `QuickAccess list` matches the pre-T29 state (`$TestDir`
+removed again). Item count equals `$OriginalQACount`.
 
 ### T30 — QuickAccess Apply missing file
-**Run:** `QuickAccess apply "D:\Temp\eh_tests_qa_missing.xml"`
+**Run:** `QuickAccess apply "$TestDir\eh_tests_qa_missing.xml"`
 **Expect:** Stderr contains
-`QuickAccess: ERROR: File not found: D:\Temp\eh_tests_qa_missing.xml`.
+`QuickAccess: ERROR: File not found: <TestDir>\eh_tests_qa_missing.xml`.
 
 ### T31 — Explorer Restart
 **Run:**
@@ -420,21 +431,19 @@ PowerShell wrapper, not the C# library).
 ## Teardown
 
 1. Restore the taskbar from the original snapshot taken in Setup:
-   `Taskbar apply "D:\Temp\eh_tests_original.xml"`
+   `Taskbar apply "$TestDir\eh_tests_original.xml"`
 2. Run `Taskbar list` and verify the item count equals `$OriginalTaskbarCount`
    and the first three display names match `$OriginalTop3`.
 3. Restore Quick Access from the original snapshot:
-   `QuickAccess apply "D:\Temp\eh_tests_qa_original.xml"`
+   `QuickAccess apply "$TestDir\eh_tests_qa_original.xml"`
 4. Run `QuickAccess list` and verify item count equals `$OriginalQACount`.
 5. Delete any pending layout XML left behind:
    `Remove-Item "$env:LOCALAPPDATA\Microsoft\Windows\Shell\LayoutModification.xml" -ErrorAction SilentlyContinue`
-6. Clean up test files in `D:\Temp`:
-   - `eh_tests_original.xml` and its sibling `links\` folder
-   - `eh_tests_qa_original.xml`
-   - `eh_tests_explicit.xml` and any `applied_layout_*.xml` files
-   - `eh_tests_snap_dir\` folder
-   - `eh_tests_qa.xml`
-   - `D:\Temp\links\` (created by T17)
+6. Delete the entire test working directory:
+   `Remove-Item -Recurse -Force $TestDir`
+   All test artifacts (snapshots, links folders, explicit/snap_dir
+   snapshots) were created inside `$TestDir`, so removing it is a
+   one-liner cleanup.
 
 ## Report Format
 
