@@ -144,7 +144,11 @@ public static class TaskbarCommands
     // ───────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Unpins ALL items from the taskbar using raw PIDLs from enumeration.
+    /// Unpins ALL items from the taskbar using raw PIDLs from enumeration,
+    /// then deletes any leftover .lnk files from the user's pinned TaskBar
+    /// folder. Windows otherwise accumulates '_N' suffixed copies of each
+    /// shortcut across repeated apply-from-snapshot cycles; clearing the
+    /// folder each time we do a full unpin keeps the pinned names stable.
     /// </summary>
     public static int UnpinAllCommand()
     {
@@ -157,7 +161,20 @@ public static class TaskbarCommands
             Console.WriteLine($"Taskbar: Unpinning {aItems.Count} items...");
             aPinnedList.UnpinAll(aItems);
 
+            // Delete stale .lnk files from the pinned TaskBar folder.
+            // Windows will recreate them from the layout XML on the next
+            // apply. Without this step, repeated unpinall+apply cycles
+            // leave behind 'Name_1.lnk', 'Name_1_1.lnk', etc.
+            int aDeleted = 0;
+            if (Directory.Exists(TASKBAR_PINNED_PATH)) {
+                foreach (string aLnk in Directory.EnumerateFiles(TASKBAR_PINNED_PATH, "*.lnk")) {
+                    try { File.Delete(aLnk); aDeleted++; } catch { /* best effort */ }
+                }
+            }
+
             Console.WriteLine($"Taskbar: Unpinned {aItems.Count} items.");
+            if (aDeleted > 0)
+                Console.WriteLine($"Taskbar: Cleared {aDeleted} stale .lnk file(s) from the pinned folder.");
             return 0;
         }
         catch (Exception x)
